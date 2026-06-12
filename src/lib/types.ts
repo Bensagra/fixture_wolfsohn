@@ -41,6 +41,7 @@ export interface TournamentSettings {
 
 export interface TournamentState {
   id: string;
+  associationCode: string;
   settings: TournamentSettings;
   teams: Team[];
   matches: Match[];

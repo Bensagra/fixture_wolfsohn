@@ -1,6 +1,7 @@
 # Mundial Or Hanoar
 
-Fixture mobile-first para administrar un torneo en formato liga o eliminación directa.
+Fixture mobile-first para administrar múltiples torneos simultáneos en formato liga o
+eliminación directa.
 
 ## Desarrollo
 
@@ -23,3 +24,15 @@ Sin Supabase, la aplicación guarda automáticamente todo en `localStorage`.
 
 La tabla es visible públicamente para que todos puedan consultar el fixture, pero solo
 un usuario autenticado puede modificarla desde el panel administrador.
+
+Cada torneo se guarda como una fila independiente en `public.tournaments`, con sus
+propios equipos, partidos, resultados, configuración y estado de publicación.
+
+## Códigos de asociación
+
+El ingreso público es anónimo. Cada torneo tiene un código único que el administrador
+comparte con los participantes. Un visitante solo puede consultar los torneos que agregó
+con su código en ese dispositivo.
+
+Para actualizar una base existente, ejecutar `supabase/association-codes-migration.sql`
+una vez en el SQL Editor de Supabase.

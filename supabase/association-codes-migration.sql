@@ -1,22 +1,24 @@
-create table if not exists public.tournaments (
-  id text primary key,
-  association_code text not null unique default upper(substr(md5(random()::text || clock_timestamp()::text), 1, 8)),
-  data jsonb not null,
-  updated_at timestamptz not null default now()
-);
+alter table public.tournaments
+add column if not exists association_code text;
 
-alter table public.tournaments enable row level security;
+update public.tournaments
+set association_code = upper(substr(md5(random()::text || clock_timestamp()::text || id), 1, 8))
+where association_code is null;
+
+alter table public.tournaments
+alter column association_code set default upper(substr(md5(random()::text || clock_timestamp()::text), 1, 8)),
+alter column association_code set not null;
+
+create unique index if not exists tournaments_association_code_key
+on public.tournaments (association_code);
+
+drop policy if exists "Demo can read tournament" on public.tournaments;
+drop policy if exists "Admins can read tournaments" on public.tournaments;
 
 create policy "Admins can read tournaments"
 on public.tournaments for select
 to authenticated
 using (true);
-
-create policy "Admins can write tournaments"
-on public.tournaments for all
-to authenticated
-using (true)
-with check (true);
 
 create or replace function public.get_tournament_by_code(code_input text)
 returns jsonb

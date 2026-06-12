@@ -7,15 +7,33 @@ const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 export const supabaseEnabled = Boolean(url && anonKey);
 export const supabase = supabaseEnabled ? createClient(url, anonKey) : null;
 
-export async function loadRemoteTournament(id: string) {
-  if (!supabase) return null;
+type TournamentRow = {
+  data: TournamentState;
+  association_code: string;
+};
+
+const hydrateRow = (row: TournamentRow): TournamentState => ({
+  ...row.data,
+  associationCode: row.association_code,
+});
+
+export async function loadRemoteTournaments() {
+  if (!supabase) return [];
   const { data, error } = await supabase
     .from("tournaments")
-    .select("data")
-    .eq("id", id)
-    .maybeSingle();
+    .select("data, association_code")
+    .order("updated_at", { ascending: false });
   if (error) throw error;
-  return (data?.data as TournamentState | undefined) ?? null;
+  return ((data ?? []) as TournamentRow[]).map(hydrateRow);
+}
+
+export async function loadRemoteTournamentByCode(code: string) {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("get_tournament_by_code", {
+    code_input: code.trim().toUpperCase(),
+  });
+  if (error) throw error;
+  return (data as TournamentState | null) ?? null;
 }
 
 export async function saveRemoteTournament(state: TournamentState) {
@@ -26,9 +44,21 @@ export async function saveRemoteTournament(state: TournamentState) {
   if (!session) return false;
   const { error } = await supabase.from("tournaments").upsert({
     id: state.id,
+    association_code: state.associationCode,
     data: state,
     updated_at: new Date().toISOString(),
   });
+  if (error) throw error;
+  return true;
+}
+
+export async function deleteRemoteTournament(id: string) {
+  if (!supabase) return false;
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) return false;
+  const { error } = await supabase.from("tournaments").delete().eq("id", id);
   if (error) throw error;
   return true;
 }

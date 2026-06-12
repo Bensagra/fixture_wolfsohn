@@ -6,6 +6,7 @@ import {
   Clock3,
   Cloud,
   CloudOff,
+  Copy,
   Crown,
   Eye,
   EyeOff,
@@ -162,6 +163,7 @@ function SectionHeader({
 
 function HomeView({ navigate }: { navigate: (view: View) => void }) {
   const { state } = useTournament();
+  const [titleLead, ...titleRest] = state.settings.title.split(" ");
   const playable = state.matches.filter((match) => match.status === "scheduled");
   const completed = state.matches.filter((match) => match.status === "completed");
   const next = playable[0];
@@ -184,7 +186,7 @@ function HomeView({ navigate }: { navigate: (view: View) => void }) {
             <Logo />
             <div>
               <span className="hero__kicker">Comunidad Or Hanoar presenta</span>
-              <h1>Mundial<br /><em>Or Hanoar</em></h1>
+              <h1>{titleLead}<br /><em>{titleRest.join(" ") || "Or Hanoar"}</em></h1>
             </div>
           </div>
           <p>{state.settings.subtitle}</p>
@@ -408,7 +410,7 @@ function AdminView() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
-  const [section, setSection] = useState<"config" | "teams" | "results">("config");
+  const [section, setSection] = useState<"tournaments" | "config" | "teams" | "results">("tournaments");
   const [editing, setEditing] = useState<Match | null>(null);
 
   useEffect(() => {
@@ -425,7 +427,7 @@ function AdminView() {
       try {
         await signInAdmin(email, password);
         setAuthenticated(true);
-        tournament.updateSettings({});
+        await tournament.refreshTournaments();
       } catch {
         setLoginError("No pudimos ingresar. Revisá el email y la contraseña.");
       }
@@ -480,15 +482,127 @@ function AdminView() {
           {tournament.supabaseEnabled ? tournament.synced ? "Sincronizado" : "Guardando..." : "Guardado local"}
         </div>
       </header>
+      <div className="active-admin-tournament">
+        <span>Editando</span>
+        <strong>{state.settings.title}</strong>
+        <small>{state.settings.format === "league" ? "Liga" : "Eliminatorias"} · {state.teams.length} equipos</small>
+      </div>
       <div className="admin-tabs">
+        <button className={section === "tournaments" ? "active" : ""} onClick={() => setSection("tournaments")}><Trophy size={16} /> Torneos</button>
         <button className={section === "config" ? "active" : ""} onClick={() => setSection("config")}><Settings size={16} /> Torneo</button>
         <button className={section === "teams" ? "active" : ""} onClick={() => setSection("teams")}><Users size={16} /> Equipos</button>
         <button className={section === "results" ? "active" : ""} onClick={() => setSection("results")}><ListFilter size={16} /> Resultados</button>
       </div>
+      {section === "tournaments" ? <TournamentsAdmin onManage={() => setSection("config")} /> : null}
       {section === "config" ? <TournamentAdmin /> : null}
       {section === "teams" ? <TeamsAdmin /> : null}
       {section === "results" ? <ResultsAdmin onEdit={setEditing} /> : null}
       {editing ? <ResultModal match={editing} onClose={() => setEditing(null)} /> : null}
+    </div>
+  );
+}
+
+function TournamentsAdmin({ onManage }: { onManage: () => void }) {
+  const {
+    tournaments,
+    activeTournamentId,
+    createTournament,
+    deleteTournament,
+    regenerateAssociationCode,
+    selectTournament,
+  } = useTournament();
+  const [title, setTitle] = useState("");
+  const [format, setFormat] = useState<TournamentFormat>("league");
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (!title.trim()) return;
+    createTournament(title, format);
+    setTitle("");
+    onManage();
+  };
+  return (
+    <div className="admin-content">
+      <section className="admin-card">
+        <SectionHeader eyebrow={`${tournaments.length} en simultáneo`} title="Todos los torneos" />
+        <div className="tournament-admin-grid">
+          {tournaments.map((tournament) => (
+            <article
+              className={`tournament-admin-card ${tournament.id === activeTournamentId ? "active" : ""}`}
+              key={tournament.id}
+            >
+              <div className="tournament-admin-card__top">
+                <span className={tournament.settings.published ? "publish-dot active" : "publish-dot"} />
+                <span>{tournament.settings.published ? "Publicado" : "Oculto"}</span>
+                {tournament.id === activeTournamentId ? <strong>Editando ahora</strong> : null}
+              </div>
+              <h3>{tournament.settings.title}</h3>
+              <p>{tournament.settings.subtitle}</p>
+              <div className="tournament-admin-card__stats">
+                <span><Shield size={14} /> {tournament.teams.length} equipos</span>
+                <span><Swords size={14} /> {tournament.matches.length} partidos</span>
+                <span><CalendarDays size={14} /> {formatDate(`${tournament.settings.eventDate}T12:00:00`)}</span>
+              </div>
+              <div className="association-code-admin">
+                <span>Código de asociación</span>
+                <strong>{tournament.associationCode}</strong>
+                <button
+                  className="icon-button"
+                  onClick={() => navigator.clipboard.writeText(tournament.associationCode)}
+                  aria-label={`Copiar código ${tournament.associationCode}`}
+                >
+                  <Copy size={14} />
+                </button>
+                <button
+                  className="code-regenerate"
+                  onClick={() =>
+                    confirm("El código anterior dejará de funcionar para nuevos ingresos. ¿Regenerar?") &&
+                    regenerateAssociationCode(tournament.id)
+                  }
+                >
+                  Regenerar
+                </button>
+              </div>
+              <div className="tournament-admin-card__actions">
+                <button
+                  className="secondary-button"
+                  onClick={() => {
+                    selectTournament(tournament.id);
+                    onManage();
+                  }}
+                >
+                  <Pencil size={15} /> Gestionar
+                </button>
+                <button
+                  className="icon-button icon-button--danger"
+                  disabled={tournaments.length <= 1}
+                  onClick={() =>
+                    confirm(`¿Eliminar "${tournament.settings.title}" y todos sus resultados?`) &&
+                    deleteTournament(tournament.id)
+                  }
+                  aria-label={`Eliminar ${tournament.settings.title}`}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+      <section className="admin-card create-tournament-card">
+        <div>
+          <span className="eyebrow">Nueva competencia</span>
+          <h2>Crear otro torneo</h2>
+          <p>Va a tener sus propios equipos, fixture y resultados.</p>
+        </div>
+        <form onSubmit={submit}>
+          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Ej: Copa Secundaria" />
+          <select value={format} onChange={(event) => setFormat(event.target.value as TournamentFormat)}>
+            <option value="league">Liga</option>
+            <option value="knockout">Eliminación directa</option>
+          </select>
+          <button className="primary-button" type="submit"><Plus size={17} /> Crear torneo</button>
+        </form>
+      </section>
     </div>
   );
 }
@@ -643,7 +757,7 @@ function Header({ view, navigate }: { view: View; navigate: (view: View) => void
   ];
   return (
     <header className="site-header">
-      <button className="header-brand" onClick={() => navigate("inicio")}><Logo small /><span><strong>Mundial</strong><small>Or Hanoar</small></span></button>
+      <button className="header-brand" onClick={() => navigate("inicio")}><Logo small /><span><strong>{state.settings.title}</strong><small>Or Hanoar</small></span></button>
       <nav>
         {links.map((link) => <button key={link.id} className={view === link.id ? "active" : ""} onClick={() => navigate(link.id)}>{link.label}</button>)}
       </nav>
@@ -651,6 +765,117 @@ function Header({ view, navigate }: { view: View; navigate: (view: View) => void
       <button className="menu-button" onClick={() => setOpen(!open)}>{open ? <X /> : <Menu />}</button>
       {open ? <div className="mobile-menu">{[...links, { id: "admin" as View, label: "Panel admin" }].map((link) => <button key={link.id} onClick={() => { navigate(link.id); setOpen(false); }}>{link.label}</button>)}</div> : null}
     </header>
+  );
+}
+
+function TournamentSwitcher() {
+  const { visibleTournaments, activeTournamentId, selectTournament, removeAssociation } = useTournament();
+  const [adding, setAdding] = useState(false);
+  return (
+    <>
+      <div className="tournament-switcher">
+        <div className="tournament-switcher__inner">
+          <span><Trophy size={15} /> Mis torneos</span>
+          <div>
+            {visibleTournaments.map((tournament) => (
+              <div className="associated-tournament-chip" key={tournament.id}>
+                <button
+                  className={tournament.id === activeTournamentId ? "active" : ""}
+                  onClick={() => selectTournament(tournament.id)}
+                >
+                  {tournament.settings.title}
+                  <small>{tournament.settings.format === "league" ? "Liga" : "Copa"}</small>
+                </button>
+                <button
+                  className="association-remove"
+                  onClick={() => confirm(`¿Quitar "${tournament.settings.title}" de este teléfono?`) && removeAssociation(tournament.id)}
+                  aria-label={`Quitar ${tournament.settings.title}`}
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+            <button className="add-association-button" onClick={() => setAdding(true)}><Plus size={13} /> Agregar torneo</button>
+          </div>
+        </div>
+      </div>
+      {adding ? <AssociationModal onClose={() => setAdding(false)} /> : null}
+    </>
+  );
+}
+
+function AssociationForm({ onSuccess }: { onSuccess?: () => void }) {
+  const { associateTournament } = useTournament();
+  const [code, setCode] = useState("");
+  const [status, setStatus] = useState("");
+  const [loading, setLoading] = useState(false);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setLoading(true);
+    setStatus("");
+    const result = await associateTournament(code);
+    setLoading(false);
+    if (result === "success") {
+      onSuccess?.();
+      return;
+    }
+    setStatus(
+      result === "already-added"
+        ? "Este torneo ya está agregado."
+        : result === "unpublished"
+          ? "El torneo todavía no fue publicado."
+          : "No encontramos un torneo publicado con ese código.",
+    );
+  };
+  return (
+    <form className="association-form" onSubmit={submit}>
+      <label>
+        <span>Código de asociación</span>
+        <input
+          value={code}
+          onChange={(event) => setCode(event.target.value.toUpperCase())}
+          placeholder="Ej: OR2026"
+          maxLength={12}
+          autoFocus
+        />
+      </label>
+      {status ? <span className="association-error">{status}</span> : null}
+      <button className="primary-button" type="submit" disabled={loading}>
+        <Plus size={17} /> {loading ? "Buscando..." : "Agregar torneo"}
+      </button>
+    </form>
+  );
+}
+
+function AssociationModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="modal-backdrop" onMouseDown={onClose}>
+      <div className="association-modal" onMouseDown={(event) => event.stopPropagation()}>
+        <button type="button" className="modal-close" onClick={onClose}><X /></button>
+        <Logo />
+        <span className="eyebrow">Ingreso anónimo</span>
+        <h2>Agregar torneo</h2>
+        <p>Ingresá el código que compartió el organizador.</p>
+        <AssociationForm onSuccess={onClose} />
+      </div>
+    </div>
+  );
+}
+
+function AssociationAccessView({ navigate }: { navigate: (view: View) => void }) {
+  return (
+    <div className="association-access">
+      <div className="association-access__card">
+        <Logo />
+        <span className="eyebrow">Fixture Or Hanoar</span>
+        <h1>Seguí tu torneo</h1>
+        <p>Tu ingreso es anónimo. Agregá el código del torneo para consultar partidos, resultados y posiciones.</p>
+        <AssociationForm />
+        <button className="admin-access-link" onClick={() => navigate("admin")}>
+          <LockKeyhole size={14} /> Soy administrador
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -671,7 +896,7 @@ function BottomNav({ view, navigate }: { view: View; navigate: (view: View) => v
 
 export default function App() {
   const [view, setView] = useState<View>("inicio");
-  const { state } = useTournament();
+  const { state, hasPublicAccess } = useTournament();
   const navigate = (next: View) => {
     setView(next);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -679,8 +904,11 @@ export default function App() {
   return (
     <div className="app">
       <Header view={view} navigate={navigate} />
+      {view !== "admin" && hasPublicAccess ? <TournamentSwitcher /> : null}
       <main>
-        {!state.settings.published && view !== "admin" ? (
+        {view !== "admin" && !hasPublicAccess ? (
+          <AssociationAccessView navigate={navigate} />
+        ) : !state.settings.published && view !== "admin" ? (
           <div className="unpublished">
             <Logo /><span className="eyebrow">Volvemos pronto</span><h1>Estamos preparando el fixture</h1><p>El torneo todavía no fue publicado.</p>
           </div>
@@ -694,7 +922,7 @@ export default function App() {
           </>
         )}
       </main>
-      {view !== "admin" ? <BottomNav view={view} navigate={navigate} /> : null}
+      {view !== "admin" && hasPublicAccess ? <BottomNav view={view} navigate={navigate} /> : null}
     </div>
   );
 }
