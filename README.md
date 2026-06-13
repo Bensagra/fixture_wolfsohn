@@ -34,5 +34,20 @@ El ingreso público es anónimo. Cada torneo tiene un código único que el admi
 comparte con los participantes. Un visitante solo puede consultar los torneos que agregó
 con su código en ese dispositivo.
 
-Para actualizar una base existente, ejecutar `supabase/association-codes-migration.sql`
-una vez en el SQL Editor de Supabase.
+Para actualizar una base existente con códigos, Realtime, equipos anónimos y
+notificaciones, ejecutar `supabase/live-pwa-migration.sql` una vez en el SQL Editor.
+
+También hay que habilitar **Allow anonymous sign-ins** en
+Authentication > Providers > Anonymous.
+
+## PWA y notificaciones
+
+La app incluye manifest, service worker, instalación en el teléfono y suscripciones
+push por equipo. Para activar el envío push:
+
+1. Desplegar `supabase/functions/send-team-notification`.
+2. Configurar en Supabase los secrets `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` y
+   `VAPID_SUBJECT`.
+3. Usar la misma clave pública como `VITE_VAPID_PUBLIC_KEY`.
+
+Las claves generadas localmente están en `.env.push.local`, que está ignorado por Git.

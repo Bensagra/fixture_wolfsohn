@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { calculateStandings, generateKnockout, generateLeague, settleKnockout } from "./fixture";
+import {
+  calculateStandings,
+  generateGroupsAndFinals,
+  generateKnockout,
+  generateLeague,
+  settleGroupsAndFinals,
+  settleKnockout,
+} from "./fixture";
 import type { Team, TournamentSettings } from "./types";
 
 const settings: TournamentSettings = {
@@ -64,5 +71,31 @@ describe("fixture eliminatorio", () => {
     expect(final.homeTeamId).toBe(semifinals[0].homeTeamId);
     expect(final.awayTeamId).toBe(semifinals[1].awayTeamId);
     expect(final.status).toBe("scheduled");
+  });
+});
+
+describe("fase de grupos más finales", () => {
+  it("genera dos grupos, semifinales y final", () => {
+    const participants = teams(8);
+    const matches = generateGroupsAndFinals(participants, { ...settings, format: "groups" });
+    expect(matches.filter((match) => match.group === "A")).toHaveLength(6);
+    expect(matches.filter((match) => match.group === "B")).toHaveLength(6);
+    expect(matches.filter((match) => match.stage === "semifinal")).toHaveLength(2);
+    expect(matches.filter((match) => match.stage === "final")).toHaveLength(1);
+  });
+
+  it("clasifica automáticamente a semifinales", () => {
+    const participants = teams(8);
+    let matches = generateGroupsAndFinals(participants, { ...settings, format: "groups" });
+    matches = matches.map((match) =>
+      match.stage === "group"
+        ? { ...match, status: "completed", homeScore: 1, awayScore: 0, winnerTeamId: match.homeTeamId }
+        : match,
+    );
+    matches = settleGroupsAndFinals(participants, matches);
+    const semifinals = matches.filter((match) => match.stage === "semifinal");
+    expect(semifinals.every((match) => match.status === "scheduled")).toBe(true);
+    expect(semifinals.every((match) => match.homeTeamId && match.awayTeamId)).toBe(true);
+    expect(matches.find((match) => match.stage === "final")?.status).toBe("pending");
   });
 });

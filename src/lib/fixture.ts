@@ -21,6 +21,10 @@ function scheduledDate(
   };
 }
 
+function withSchedule(match: Match, settings: TournamentSettings, matchIndex: number): Match {
+  return { ...match, ...scheduledDate(settings, matchIndex) };
+}
+
 export function generateLeague(
   teams: Team[],
   settings: TournamentSettings,
@@ -49,6 +53,7 @@ export function generateLeague(
         homeScore: null,
         awayScore: null,
         status: "scheduled",
+        stage: "league",
         ...schedule,
       });
       matchIndex += 1;
@@ -96,6 +101,7 @@ export function generateKnockout(
         homeScore: null,
         awayScore: null,
         status: round === 0 ? "scheduled" : "pending",
+        stage: roundName(round, totalRounds) === "Final" ? "final" : roundName(round, totalRounds) === "Semifinal" ? "semifinal" : "league",
         sourceMatchIds: [],
         ...schedule,
       };
@@ -121,6 +127,118 @@ export function generateKnockout(
       match.nextMatchId = next.id;
       match.nextSlot = index % 2 === 0 ? "home" : "away";
       next.sourceMatchIds!.push(match.id);
+    });
+  }
+
+  return settleKnockout(matches);
+}
+
+export function generateGroupsAndFinals(
+  teams: Team[],
+  settings: TournamentSettings,
+): Match[] {
+  const groupA = teams.filter((_, index) => index % 2 === 0);
+  const groupB = teams.filter((_, index) => index % 2 === 1);
+  const groups = [
+    { name: "A" as const, teams: groupA },
+    { name: "B" as const, teams: groupB },
+  ];
+  const matches: Match[] = [];
+  let matchIndex = 0;
+
+  groups.forEach(({ name, teams: groupTeams }) => {
+    generateLeague(groupTeams, settings).forEach((match) => {
+      matches.push(
+        withSchedule(
+          {
+            ...match,
+            roundLabel: `Grupo ${name} · ${match.roundLabel}`,
+            stage: "group",
+            group: name,
+          },
+          settings,
+          matchIndex,
+        ),
+      );
+      matchIndex += 1;
+    });
+  });
+
+  const semifinalOne: Match = withSchedule({
+    id: id(),
+    round: 100,
+    roundLabel: "Semifinal",
+    order: 0,
+    homeTeamId: null,
+    awayTeamId: null,
+    homeScore: null,
+    awayScore: null,
+    status: "pending",
+    stage: "semifinal",
+    scheduledAt: "",
+    field: "",
+  }, settings, matchIndex++);
+  const semifinalTwo: Match = withSchedule({
+    ...semifinalOne,
+    id: id(),
+    order: 1,
+  }, settings, matchIndex++);
+  const final: Match = withSchedule({
+    ...semifinalOne,
+    id: id(),
+    round: 101,
+    roundLabel: "Final",
+    order: 0,
+    stage: "final",
+    nextMatchId: undefined,
+    nextSlot: undefined,
+  }, settings, matchIndex);
+  semifinalOne.nextMatchId = final.id;
+  semifinalOne.nextSlot = "home";
+  semifinalTwo.nextMatchId = final.id;
+  semifinalTwo.nextSlot = "away";
+  final.sourceMatchIds = [semifinalOne.id, semifinalTwo.id];
+
+  return [...matches, semifinalOne, semifinalTwo, final];
+}
+
+export function settleGroupsAndFinals(teams: Team[], input: Match[]): Match[] {
+  const matches = input.map((match) => ({ ...match }));
+  const groupMatches = matches.filter((match) => match.stage === "group");
+  if (!groupMatches.length || !groupMatches.every((match) => match.status === "completed")) {
+    return matches;
+  }
+
+  const groupAIds = new Set(
+    groupMatches
+      .filter((match) => match.group === "A")
+      .flatMap((match) => [match.homeTeamId, match.awayTeamId])
+      .filter((value): value is string => Boolean(value)),
+  );
+  const groupBIds = new Set(
+    groupMatches
+      .filter((match) => match.group === "B")
+      .flatMap((match) => [match.homeTeamId, match.awayTeamId])
+      .filter((value): value is string => Boolean(value)),
+  );
+  const standingsA = calculateStandings(
+    teams.filter((team) => groupAIds.has(team.id)),
+    groupMatches.filter((match) => match.group === "A"),
+  );
+  const standingsB = calculateStandings(
+    teams.filter((team) => groupBIds.has(team.id)),
+    groupMatches.filter((match) => match.group === "B"),
+  );
+  const semifinals = matches
+    .filter((match) => match.stage === "semifinal")
+    .sort((a, b) => a.order - b.order);
+  if (semifinals.length === 2 && standingsA.length >= 2 && standingsB.length >= 2) {
+    semifinals[0].homeTeamId = standingsA[0].team.id;
+    semifinals[0].awayTeamId = standingsB[1].team.id;
+    semifinals[1].homeTeamId = standingsB[0].team.id;
+    semifinals[1].awayTeamId = standingsA[1].team.id;
+    semifinals.forEach((match) => {
+      if (match.status === "pending") match.status = "scheduled";
     });
   }
 
@@ -199,7 +317,7 @@ export function calculateStandings(teams: Team[], matches: Match[]): Standing[] 
   matches
     .filter(
       (match) =>
-        match.status === "completed" &&
+        (match.status === "completed" || match.status === "live") &&
         match.homeTeamId &&
         match.awayTeamId &&
         match.homeScore !== null &&

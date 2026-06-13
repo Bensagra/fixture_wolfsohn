@@ -1,5 +1,5 @@
-export type TournamentFormat = "league" | "knockout";
-export type MatchStatus = "pending" | "scheduled" | "completed" | "bye";
+export type TournamentFormat = "league" | "knockout" | "groups";
+export type MatchStatus = "pending" | "scheduled" | "live" | "completed" | "bye";
 
 export interface Team {
   id: string;
@@ -20,8 +20,12 @@ export interface Match {
   awayScore: number | null;
   winnerTeamId?: string | null;
   status: MatchStatus;
+  stage?: "league" | "group" | "semifinal" | "final";
+  group?: "A" | "B";
   scheduledAt: string;
   field: string;
+  calledAt?: string | null;
+  startedAt?: string | null;
   nextMatchId?: string;
   nextSlot?: "home" | "away";
   sourceMatchIds?: string[];

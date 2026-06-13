@@ -1,5 +1,7 @@
 import {
   CalendarDays,
+  Bell,
+  BellRing,
   Check,
   ChevronRight,
   CircleUserRound,
@@ -8,6 +10,7 @@ import {
   CloudOff,
   Copy,
   Crown,
+  Download,
   Eye,
   EyeOff,
   Flag,
@@ -19,11 +22,14 @@ import {
   Medal,
   Menu,
   Pencil,
+  Play,
   Plus,
+  Radio,
   RefreshCcw,
   Settings,
   Shield,
   Sparkles,
+  Square,
   Swords,
   Trash2,
   Trophy,
@@ -32,6 +38,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { calculateStandings } from "./lib/fixture";
+import { enableTeamNotifications, notificationsSupported } from "./lib/notifications";
 import { useTournament } from "./lib/store";
 import { hasAdminSession, signInAdmin } from "./lib/supabase";
 import type { Match, Team, TournamentFormat } from "./lib/types";
@@ -51,6 +58,20 @@ const formatTime = (value: string) =>
     minute: "2-digit",
     hour12: false,
   }).format(new Date(value));
+
+const formatLabel = (format: TournamentFormat) =>
+  format === "league" ? "Liga" : format === "knockout" ? "Eliminatorias" : "Grupos + finales";
+
+function LiveMinute({ startedAt }: { startedAt?: string | null }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 15000);
+    return () => window.clearInterval(timer);
+  }, []);
+  if (!startedAt) return <>En vivo</>;
+  const minutes = Math.max(1, Math.floor((now - new Date(startedAt).getTime()) / 60000) + 1);
+  return <><Radio size={11} /> {minutes}'</>;
+}
 
 function Logo({ small = false }: { small?: boolean }) {
   return (
@@ -80,6 +101,7 @@ function TeamMark({ team, compact = false }: { team?: Team; compact?: boolean })
 
 function StatusPill({ status }: { status: Match["status"] }) {
   if (status === "completed") return <span className="pill pill--done"><Check size={12} /> Final</span>;
+  if (status === "live") return <span className="pill pill--playing"><Radio size={12} /> En vivo</span>;
   if (status === "bye") return <span className="pill">Pase libre</span>;
   if (status === "pending") return <span className="pill pill--muted">A confirmar</span>;
   return <span className="pill pill--live">Próximo</span>;
@@ -110,7 +132,7 @@ function MatchCard({
           <strong>{home?.name ?? "A definir"}</strong>
         </div>
         <div className="match-score">
-          {match.status === "completed" ? (
+          {match.status === "completed" || match.status === "live" ? (
             <>
               <strong>{match.homeScore}</strong>
               <span>:</span>
@@ -128,6 +150,8 @@ function MatchCard({
         </div>
       </div>
       <div className="match-card__footer">
+        {match.status === "live" ? <span className="live-minute"><LiveMinute startedAt={match.startedAt} /></span> : null}
+        {match.calledAt && match.status === "scheduled" ? <span className="called-indicator"><BellRing size={13} /> Jugadores llamados</span> : null}
         <span><CalendarDays size={14} /> {formatDate(match.scheduledAt)}</span>
         <span><Clock3 size={14} /> {formatTime(match.scheduledAt)}</span>
         <span><MapPin size={14} /> {match.field}</span>
@@ -165,10 +189,11 @@ function HomeView({ navigate }: { navigate: (view: View) => void }) {
   const { state } = useTournament();
   const [titleLead, ...titleRest] = state.settings.title.split(" ");
   const playable = state.matches.filter((match) => match.status === "scheduled");
+  const live = state.matches.filter((match) => match.status === "live");
   const completed = state.matches.filter((match) => match.status === "completed");
   const next = playable[0];
   const champion =
-    state.settings.format === "knockout"
+    state.settings.format !== "league"
       ? state.teams.find(
           (team) =>
             team.id ===
@@ -193,7 +218,7 @@ function HomeView({ navigate }: { navigate: (view: View) => void }) {
           <div className="hero__facts">
             <span><CalendarDays size={17} /> {formatDate(`${state.settings.eventDate}T12:00:00`)}</span>
             <span><MapPin size={17} /> {state.settings.venue}</span>
-            <span><Swords size={17} /> {state.settings.format === "league" ? "Modo liga" : "Eliminación directa"}</span>
+            <span><Swords size={17} /> {formatLabel(state.settings.format)}</span>
           </div>
         </div>
       </section>
@@ -216,6 +241,17 @@ function HomeView({ navigate }: { navigate: (view: View) => void }) {
             <span>jugados</span>
           </button>
         </section>
+
+        <MyTeamCard />
+
+        {live.length ? (
+          <section>
+            <SectionHeader eyebrow="Ahora mismo" title="Partidos en vivo" />
+            <div className="card-list">
+              {live.map((match) => <MatchCard key={match.id} match={match} teams={state.teams} featured />)}
+            </div>
+          </section>
+        ) : null}
 
         {champion ? (
           <section className="champion-card">
@@ -291,7 +327,27 @@ function MatchesView() {
 
 function CompetitionView() {
   const { state } = useTournament();
-  return state.settings.format === "league" ? <StandingsView /> : <BracketView />;
+  return state.settings.format === "league" ? <StandingsView /> : state.settings.format === "groups" ? <GroupsView /> : <BracketView />;
+}
+
+function StandingsTable({ teams, matches }: { teams: Team[]; matches: Match[] }) {
+  const standings = calculateStandings(teams, matches);
+  return (
+    <div className="table-card">
+      <div className="standings-row standings-row--head">
+        <span>#</span><span>Equipo</span><span>PJ</span><span>DG</span><span>PTS</span>
+      </div>
+      {standings.map((standing, index) => (
+        <div className="standings-row" key={standing.team.id}>
+          <strong className={index < 2 ? `position position--${index + 1}` : "position"}>{index + 1}</strong>
+          <div className="standing-team"><TeamMark team={standing.team} compact /><span>{standing.team.name}</span></div>
+          <span>{standing.played}</span>
+          <span>{standing.goalDifference > 0 ? "+" : ""}{standing.goalDifference}</span>
+          <strong>{standing.points}</strong>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function StandingsView() {
@@ -300,24 +356,40 @@ function StandingsView() {
   return (
     <div className="page-content">
       <PageIntro eyebrow="Modo liga" title="Tabla de posiciones" text="Tres puntos por victoria, uno por empate." />
-      <div className="table-card">
-        <div className="standings-row standings-row--head">
-          <span>#</span><span>Equipo</span><span>PJ</span><span>DG</span><span>PTS</span>
-        </div>
-        {standings.map((standing, index) => (
-          <div className="standings-row" key={standing.team.id}>
-            <strong className={index < 3 ? `position position--${index + 1}` : "position"}>{index + 1}</strong>
-            <div className="standing-team"><TeamMark team={standing.team} compact /><span>{standing.team.name}</span></div>
-            <span>{standing.played}</span>
-            <span>{standing.goalDifference > 0 ? "+" : ""}{standing.goalDifference}</span>
-            <strong>{standing.points}</strong>
-          </div>
-        ))}
-      </div>
+      <StandingsTable teams={standings.map((item) => item.team)} matches={state.matches} />
       <div className="legend-card">
         <span><Medal size={16} /> Desempate</span>
         <p>Por puntos, diferencia de gol y goles a favor.</p>
       </div>
+    </div>
+  );
+}
+
+function GroupsView() {
+  const { state } = useTournament();
+  const groupMatches = state.matches.filter((match) => match.stage === "group");
+  const finals = state.matches.filter((match) => match.stage === "semifinal" || match.stage === "final");
+  return (
+    <div className="page-content page-content--wide">
+      <PageIntro eyebrow="Fase de grupos" title="Grupos y finales" text="Los dos mejores de cada grupo avanzan a semifinales." />
+      <div className="group-standings-grid">
+        {(["A", "B"] as const).map((group) => {
+          const matches = groupMatches.filter((match) => match.group === group);
+          const ids = new Set(matches.flatMap((match) => [match.homeTeamId, match.awayTeamId]));
+          return (
+            <section key={group}>
+              <SectionHeader eyebrow="Clasifican los primeros 2" title={`Grupo ${group}`} />
+              <StandingsTable teams={state.teams.filter((team) => ids.has(team.id))} matches={matches} />
+            </section>
+          );
+        })}
+      </div>
+      <section className="group-finals">
+        <SectionHeader eyebrow="Etapa final" title="Semifinales y final" />
+        <div className="card-list">
+          {finals.map((match) => <MatchCard key={match.id} match={match} teams={state.teams} />)}
+        </div>
+      </section>
     </div>
   );
 }
@@ -397,6 +469,72 @@ function PageIntro({ eyebrow, title, text }: { eyebrow: string; title: string; t
 
 function EmptyState({ icon, title, text }: { icon: ReactNode; title: string; text: string }) {
   return <div className="empty-state"><span>{icon}</span><strong>{title}</strong><p>{text}</p></div>;
+}
+
+type InstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+};
+
+function MyTeamCard() {
+  const { state, selectedTeamId, selectMyTeam } = useTournament();
+  const [notificationStatus, setNotificationStatus] = useState(
+    typeof Notification !== "undefined" ? Notification.permission : "default",
+  );
+  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
+  const [message, setMessage] = useState("");
+  const selected = state.teams.find((team) => team.id === selectedTeamId);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as InstallPromptEvent);
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+
+  const enableNotifications = async () => {
+    if (!selected) {
+      setMessage("Primero elegí tu equipo.");
+      return;
+    }
+    try {
+      await enableTeamNotifications(state.id, selected.id);
+      setNotificationStatus("granted");
+      setMessage("Avisos activados para tu equipo.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No pudimos activar los avisos.");
+    }
+  };
+
+  return (
+    <section className="my-team-card">
+      <div className="my-team-card__intro">
+        {selected ? <TeamMark team={selected} /> : <span className="my-team-card__icon"><BellRing /></span>}
+        <div>
+          <span className="eyebrow">Tu experiencia</span>
+          <h2>{selected ? `Sos de ${selected.name}` : "¿De qué equipo sos?"}</h2>
+          <p>Lo guardamos anónimamente en este dispositivo para avisarte cuándo jugar.</p>
+        </div>
+      </div>
+      <div className="my-team-card__actions">
+        <select value={selectedTeamId ?? ""} onChange={(event) => selectMyTeam(event.target.value || null)}>
+          <option value="">Elegir mi equipo</option>
+          {state.teams.map((team) => <option value={team.id} key={team.id}>{team.name}</option>)}
+        </select>
+        <button className="secondary-button" onClick={enableNotifications} disabled={!notificationsSupported()}>
+          <Bell size={15} /> {notificationStatus === "granted" ? "Avisos activados" : "Activar avisos"}
+        </button>
+        {installPrompt ? (
+          <button className="secondary-button" onClick={async () => { await installPrompt.prompt(); setInstallPrompt(null); }}>
+            <Download size={15} /> Instalar app
+          </button>
+        ) : null}
+      </div>
+      {message ? <span className="my-team-card__message">{message}</span> : null}
+    </section>
+  );
 }
 
 function AdminView() {
@@ -485,7 +623,7 @@ function AdminView() {
       <div className="active-admin-tournament">
         <span>Editando</span>
         <strong>{state.settings.title}</strong>
-        <small>{state.settings.format === "league" ? "Liga" : "Eliminatorias"} · {state.teams.length} equipos</small>
+        <small>{formatLabel(state.settings.format)} · {state.teams.length} equipos</small>
       </div>
       <div className="admin-tabs">
         <button className={section === "tournaments" ? "active" : ""} onClick={() => setSection("tournaments")}><Trophy size={16} /> Torneos</button>
@@ -599,6 +737,7 @@ function TournamentsAdmin({ onManage }: { onManage: () => void }) {
           <select value={format} onChange={(event) => setFormat(event.target.value as TournamentFormat)}>
             <option value="league">Liga</option>
             <option value="knockout">Eliminación directa</option>
+            <option value="groups">Grupos + semifinales + final</option>
           </select>
           <button className="primary-button" type="submit"><Plus size={17} /> Crear torneo</button>
         </form>
@@ -613,6 +752,7 @@ function TournamentAdmin() {
   const change = <K extends keyof typeof settings>(key: K, value: (typeof settings)[K]) => updateSettings({ [key]: value });
   const regenerate = () => {
     if (state.teams.length < 2) return alert("Necesitás al menos dos equipos.");
+    if (settings.format === "groups" && state.teams.length < 4) return alert("La modalidad de grupos necesita al menos cuatro equipos.");
     if (confirm("Esto reemplaza el fixture y borra los resultados actuales. ¿Continuar?")) generateFixture();
   };
   return (
@@ -625,6 +765,9 @@ function TournamentAdmin() {
           </button>
           <button className={settings.format === "knockout" ? "active" : ""} onClick={() => change("format", "knockout")}>
             <Swords /><strong>Eliminatorias</strong><span>Llaves y final</span>
+          </button>
+          <button className={settings.format === "groups" ? "active" : ""} onClick={() => change("format", "groups")}>
+            <Users /><strong>Grupos + finales</strong><span>Dos grupos, semis y final</span>
           </button>
         </div>
       </section>
@@ -698,8 +841,10 @@ function TeamsAdmin() {
 }
 
 function ResultsAdmin({ onEdit }: { onEdit: (match: Match) => void }) {
-  const { state } = useTournament();
+  const { state, callPlayers, startMatch, finishMatch } = useTournament();
   const rounds = [...new Set(state.matches.map((match) => match.roundLabel))];
+  const cannotDraw = (match: Match) =>
+    state.settings.format === "knockout" || match.stage === "semifinal" || match.stage === "final";
   return (
     <div className="admin-content">
       {rounds.map((round) => (
@@ -707,7 +852,35 @@ function ResultsAdmin({ onEdit }: { onEdit: (match: Match) => void }) {
           <SectionHeader eyebrow={`${state.matches.filter((match) => match.roundLabel === round).length} partidos`} title={round} />
           <div className="card-list">
             {state.matches.filter((match) => match.roundLabel === round).map((match) => (
-              <MatchCard key={match.id} match={match} teams={state.teams} onEdit={onEdit} />
+              <div className="admin-live-match" key={match.id}>
+                <MatchCard match={match} teams={state.teams} onEdit={onEdit} />
+                {match.homeTeamId && match.awayTeamId && match.status !== "completed" && match.status !== "bye" ? (
+                  <div className="match-control-row">
+                    <button className="secondary-button" onClick={() => callPlayers(match.id)}>
+                      <BellRing size={15} /> {match.calledAt ? "Volver a llamar" : "Llamar jugadores"}
+                    </button>
+                    {match.status === "scheduled" ? (
+                      <button className="primary-button" onClick={() => startMatch(match.id)}>
+                        <Play size={15} /> Iniciar partido
+                      </button>
+                    ) : null}
+                    {match.status === "live" ? (
+                      <>
+                        <button className="secondary-button" onClick={() => onEdit(match)}><Pencil size={15} /> Marcador</button>
+                        <button
+                          className="finish-button"
+                          onClick={() => {
+                            if (cannotDraw(match) && match.homeScore === match.awayScore) return alert("Este partido necesita un ganador.");
+                            if (confirm("¿Finalizar el partido con este resultado?")) finishMatch(match.id);
+                          }}
+                        >
+                          <Square size={14} /> Finalizar
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
             ))}
           </div>
         </section>
@@ -717,15 +890,17 @@ function ResultsAdmin({ onEdit }: { onEdit: (match: Match) => void }) {
 }
 
 function ResultModal({ match, onClose }: { match: Match; onClose: () => void }) {
-  const { state, updateResult, clearResult } = useTournament();
+  const { state, updateResult, updateLiveScore, clearResult } = useTournament();
   const home = state.teams.find((team) => team.id === match.homeTeamId)!;
   const away = state.teams.find((team) => team.id === match.awayTeamId)!;
   const [homeScore, setHomeScore] = useState(match.homeScore ?? 0);
   const [awayScore, setAwayScore] = useState(match.awayScore ?? 0);
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (state.settings.format === "knockout" && homeScore === awayScore) return alert("En eliminación directa tiene que haber un ganador.");
-    updateResult(match.id, homeScore, awayScore);
+    const cannotDraw = state.settings.format === "knockout" || match.stage === "semifinal" || match.stage === "final";
+    if (match.status !== "live" && cannotDraw && homeScore === awayScore) return alert("Este partido tiene que tener un ganador.");
+    if (match.status === "live") updateLiveScore(match.id, homeScore, awayScore);
+    else updateResult(match.id, homeScore, awayScore);
     onClose();
   };
   return (
@@ -733,13 +908,13 @@ function ResultModal({ match, onClose }: { match: Match; onClose: () => void }) 
       <form className="result-modal" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()}>
         <button type="button" className="modal-close" onClick={onClose}><X /></button>
         <span className="eyebrow">{match.roundLabel}</span>
-        <h2>Cargar resultado</h2>
+        <h2>{match.status === "live" ? "Actualizar marcador" : "Cargar resultado"}</h2>
         <div className="score-editor">
           <div><TeamMark team={home} /><strong>{home.name}</strong><input type="number" min="0" value={homeScore} onChange={(e) => setHomeScore(Number(e.target.value))} /></div>
           <span>:</span>
           <div><TeamMark team={away} /><strong>{away.name}</strong><input type="number" min="0" value={awayScore} onChange={(e) => setAwayScore(Number(e.target.value))} /></div>
         </div>
-        <button className="primary-button" type="submit"><Check size={18} /> Guardar resultado</button>
+        <button className="primary-button" type="submit"><Check size={18} /> {match.status === "live" ? "Actualizar en vivo" : "Guardar resultado"}</button>
         {match.status === "completed" ? <button type="button" className="danger-link" onClick={() => { clearResult(match.id); onClose(); }}>Borrar resultado</button> : null}
       </form>
     </div>
@@ -752,7 +927,7 @@ function Header({ view, navigate }: { view: View; navigate: (view: View) => void
   const links: { id: View; label: string }[] = [
     { id: "inicio", label: "Inicio" },
     { id: "partidos", label: "Partidos" },
-    { id: "competencia", label: state.settings.format === "league" ? "Posiciones" : "Llaves" },
+    { id: "competencia", label: state.settings.format === "league" ? "Posiciones" : state.settings.format === "groups" ? "Grupos" : "Llaves" },
     { id: "equipos", label: "Equipos" },
   ];
   return (
@@ -784,7 +959,7 @@ function TournamentSwitcher() {
                   onClick={() => selectTournament(tournament.id)}
                 >
                   {tournament.settings.title}
-                  <small>{tournament.settings.format === "league" ? "Liga" : "Copa"}</small>
+                  <small>{formatLabel(tournament.settings.format)}</small>
                 </button>
                 <button
                   className="association-remove"
@@ -884,7 +1059,7 @@ function BottomNav({ view, navigate }: { view: View; navigate: (view: View) => v
   const items = useMemo(() => [
     { id: "inicio" as View, label: "Inicio", icon: Home },
     { id: "partidos" as View, label: "Partidos", icon: CalendarDays },
-    { id: "competencia" as View, label: state.settings.format === "league" ? "Tabla" : "Llaves", icon: Trophy },
+    { id: "competencia" as View, label: state.settings.format === "league" ? "Tabla" : state.settings.format === "groups" ? "Grupos" : "Llaves", icon: Trophy },
     { id: "equipos" as View, label: "Equipos", icon: Shield },
   ], [state.settings.format]);
   return (

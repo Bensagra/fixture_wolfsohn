@@ -8,13 +8,22 @@ import {
   useRef,
   useState,
 } from "react";
-import { generateKnockout, generateLeague, settleKnockout } from "./fixture";
+import {
+  generateGroupsAndFinals,
+  generateKnockout,
+  generateLeague,
+  settleGroupsAndFinals,
+  settleKnockout,
+} from "./fixture";
 import {
   deleteRemoteTournament,
   hasAdminSession,
   loadRemoteTournamentByCode,
   loadRemoteTournaments,
   saveRemoteTournament,
+  sendMatchAlert,
+  setRemoteMyTeam,
+  subscribeToTournamentChanges,
   supabaseEnabled,
 } from "./supabase";
 import type {
@@ -28,6 +37,7 @@ import type {
 const STORAGE_KEY = "or-hanoar-tournaments-v3";
 const ACTIVE_KEY = "or-hanoar-active-tournament";
 const ASSOCIATED_CODES_KEY = "or-hanoar-associated-codes";
+const MY_TEAMS_KEY = "or-hanoar-my-teams";
 const colors = ["#00aeea", "#124b9d", "#7c4dff", "#18a77b", "#ef8f35", "#df3f63"];
 
 export function normalizeAssociationCode(value: string) {
@@ -98,7 +108,7 @@ export function createTournamentState(
   };
 }
 
-function readLocal(): { tournaments: TournamentState[]; activeId: string; associatedCodes: string[] } {
+function readLocal(): { tournaments: TournamentState[]; activeId: string; associatedCodes: string[]; myTeams: Record<string, string> } {
   const fallback = createTournamentState(defaultSettings.title, "league", true);
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -109,13 +119,15 @@ function readLocal(): { tournaments: TournamentState[]; activeId: string; associ
     }));
     const requested = localStorage.getItem(ACTIVE_KEY);
     const codes = JSON.parse(localStorage.getItem(ASSOCIATED_CODES_KEY) || "[]") as string[];
+    const myTeams = JSON.parse(localStorage.getItem(MY_TEAMS_KEY) || "{}") as Record<string, string>;
     return {
       tournaments: migrated,
       activeId: migrated.some((item) => item.id === requested) ? requested! : migrated[0].id,
       associatedCodes: codes.map(normalizeAssociationCode),
+      myTeams,
     };
   } catch {
-    return { tournaments: [fallback], activeId: fallback.id, associatedCodes: [] };
+    return { tournaments: [fallback], activeId: fallback.id, associatedCodes: [], myTeams: {} };
   }
 }
 
@@ -125,6 +137,7 @@ interface TournamentContextValue {
   visibleTournaments: TournamentState[];
   activeTournamentId: string;
   hasPublicAccess: boolean;
+  selectedTeamId: string | null;
   synced: boolean;
   supabaseEnabled: boolean;
   refreshTournaments: () => Promise<void>;
@@ -134,11 +147,16 @@ interface TournamentContextValue {
   createTournament: (title: string, format: TournamentFormat) => void;
   deleteTournament: (id: string) => void;
   regenerateAssociationCode: (id: string) => string;
+  selectMyTeam: (teamId: string | null) => void;
   addTeam: (name: string, shortName?: string, color?: string) => void;
   removeTeam: (teamId: string) => void;
   updateSettings: (settings: Partial<TournamentSettings>) => void;
   generateFixture: () => void;
   updateResult: (matchId: string, homeScore: number, awayScore: number) => void;
+  updateLiveScore: (matchId: string, homeScore: number, awayScore: number) => void;
+  callPlayers: (matchId: string) => void;
+  startMatch: (matchId: string) => void;
+  finishMatch: (matchId: string) => void;
   clearResult: (matchId: string) => void;
   resetDemo: () => void;
 }
@@ -150,6 +168,7 @@ export function TournamentProvider({ children }: PropsWithChildren) {
   const [tournaments, setTournaments] = useState<TournamentState[]>(local.tournaments);
   const [activeTournamentId, setActiveTournamentId] = useState(local.activeId);
   const [associatedCodes, setAssociatedCodes] = useState<string[]>(local.associatedCodes);
+  const [myTeams, setMyTeams] = useState<Record<string, string>>(local.myTeams);
   const [synced, setSynced] = useState(!supabaseEnabled);
   const [remoteHydrated, setRemoteHydrated] = useState(!supabaseEnabled);
   const loadedRemote = useRef(false);
@@ -169,6 +188,7 @@ export function TournamentProvider({ children }: PropsWithChildren) {
     tournaments[0] ??
     createTournamentState();
   const hasPublicAccess = visibleTournaments.some((item) => item.id === activeTournamentId);
+  const selectedTeamId = myTeams[activeTournamentId] ?? null;
 
   const refreshTournaments = useCallback(async () => {
     if (!supabaseEnabled) return;
@@ -203,6 +223,7 @@ export function TournamentProvider({ children }: PropsWithChildren) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(tournaments));
     localStorage.setItem(ACTIVE_KEY, activeTournamentId);
     localStorage.setItem(ASSOCIATED_CODES_KEY, JSON.stringify(associatedCodes));
+    localStorage.setItem(MY_TEAMS_KEY, JSON.stringify(myTeams));
     if (!supabaseEnabled || !loadedRemote.current || !remoteHydrated) return;
     const timer = window.setTimeout(async () => {
       if (!(await hasAdminSession())) return;
@@ -212,7 +233,18 @@ export function TournamentProvider({ children }: PropsWithChildren) {
         .catch(() => setSynced(false));
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [tournaments, activeTournamentId, associatedCodes, remoteHydrated]);
+  }, [tournaments, activeTournamentId, associatedCodes, myTeams, remoteHydrated]);
+
+  useEffect(() => {
+    if (!supabaseEnabled) return;
+    return subscribeToTournamentChanges((updated) => {
+      setTournaments((current) =>
+        current.some((item) => item.id === updated.id)
+          ? current.map((item) => (item.id === updated.id ? updated : item))
+          : current,
+      );
+    });
+  }, []);
 
   const mutate = useCallback(
     (updater: (current: TournamentState) => TournamentState) => {
@@ -303,6 +335,19 @@ export function TournamentProvider({ children }: PropsWithChildren) {
     return code;
   }, []);
 
+  const selectMyTeam = useCallback(
+    (teamId: string | null) => {
+      setMyTeams((current) => {
+        const next = { ...current };
+        if (teamId) next[activeTournamentId] = teamId;
+        else delete next[activeTournamentId];
+        return next;
+      });
+      if (supabaseEnabled) setRemoteMyTeam(activeTournamentId, teamId).catch(() => setSynced(false));
+    },
+    [activeTournamentId],
+  );
+
   const addTeam = useCallback(
     (name: string, shortName?: string, color?: string) =>
       mutate((current) => ({
@@ -339,15 +384,23 @@ export function TournamentProvider({ children }: PropsWithChildren) {
 
   const generateFixture = useCallback(
     () =>
-      mutate((current) => ({
-        ...current,
-        matches:
+      mutate((current) => {
+        const matches =
           current.settings.format === "league"
             ? generateLeague(current.teams, current.settings)
-            : generateKnockout(current.teams, current.settings),
-      })),
+            : current.settings.format === "knockout"
+              ? generateKnockout(current.teams, current.settings)
+              : generateGroupsAndFinals(current.teams, current.settings);
+        return { ...current, matches };
+      }),
     [mutate],
   );
+
+  const settleMatches = useCallback((current: TournamentState, matches: Match[]) => {
+    if (current.settings.format === "knockout") return settleKnockout(matches);
+    if (current.settings.format === "groups") return settleGroupsAndFinals(current.teams, matches);
+    return matches;
+  }, []);
 
   const updateResult = useCallback(
     (matchId: string, homeScore: number, awayScore: number) =>
@@ -366,10 +419,92 @@ export function TournamentProvider({ children }: PropsWithChildren) {
             winnerTeamId: homeScore > awayScore ? match.homeTeamId : homeScore < awayScore ? match.awayTeamId : null,
           };
         });
-        if (current.settings.format === "knockout") matches = settleKnockout(matches);
+        if (current.settings.format === "groups" && target?.stage === "group") {
+          matches = matches.map((match) =>
+            match.stage === "semifinal" || match.stage === "final"
+              ? { ...match, homeTeamId: null, awayTeamId: null, homeScore: null, awayScore: null, winnerTeamId: null, status: "pending" as const, startedAt: null }
+              : match,
+          );
+        }
+        matches = settleMatches(current, matches);
         return { ...current, matches };
       }),
+    [mutate, settleMatches],
+  );
+
+  const updateLiveScore = useCallback(
+    (matchId: string, homeScore: number, awayScore: number) =>
+      mutate((current) => ({
+        ...current,
+        matches: current.matches.map((match) =>
+          match.id === matchId ? { ...match, homeScore, awayScore } : match,
+        ),
+      })),
     [mutate],
+  );
+
+  const callPlayers = useCallback(
+    (matchId: string) => {
+      mutate((current) => ({
+        ...current,
+        matches: current.matches.map((match) =>
+          match.id === matchId ? { ...match, calledAt: new Date().toISOString() } : match,
+        ),
+      }));
+      if (supabaseEnabled) sendMatchAlert(activeTournamentId, matchId, "called").catch(() => undefined);
+    },
+    [activeTournamentId, mutate],
+  );
+
+  const startMatch = useCallback(
+    (matchId: string) => {
+      mutate((current) => ({
+        ...current,
+        matches: current.matches.map((match) =>
+          match.id === matchId
+            ? {
+                ...match,
+                status: "live",
+                startedAt: new Date().toISOString(),
+                homeScore: match.homeScore ?? 0,
+                awayScore: match.awayScore ?? 0,
+              }
+            : match,
+        ),
+      }));
+      if (supabaseEnabled) sendMatchAlert(activeTournamentId, matchId, "starting").catch(() => undefined);
+    },
+    [activeTournamentId, mutate],
+  );
+
+  const finishMatch = useCallback(
+    (matchId: string) =>
+      mutate((current) => {
+        const target = current.matches.find((match) => match.id === matchId);
+        let matches = current.matches.map((match) =>
+          match.id === matchId
+            ? {
+                ...match,
+                status: "completed" as const,
+                winnerTeamId:
+                  (match.homeScore ?? 0) > (match.awayScore ?? 0)
+                    ? match.homeTeamId
+                    : (match.homeScore ?? 0) < (match.awayScore ?? 0)
+                      ? match.awayTeamId
+                      : null,
+              }
+            : match,
+        );
+        if (current.settings.format === "groups" && target?.stage === "group") {
+          matches = matches.map((match) =>
+            match.stage === "semifinal" || match.stage === "final"
+              ? { ...match, homeTeamId: null, awayTeamId: null, homeScore: null, awayScore: null, winnerTeamId: null, status: "pending" as const, startedAt: null }
+              : match,
+          );
+        }
+        return { ...current, matches: settleMatches(current, matches) };
+      }),
+    [mutate, settleMatches],
   );
 
   const clearResult = useCallback(
@@ -381,13 +516,20 @@ export function TournamentProvider({ children }: PropsWithChildren) {
             return { ...match, homeTeamId: null, awayTeamId: null, homeScore: null, awayScore: null, winnerTeamId: null, status: "pending" as const };
           }
           return match.id === matchId
-            ? { ...match, homeScore: null, awayScore: null, winnerTeamId: null, status: "scheduled" as const }
+            ? { ...match, homeScore: null, awayScore: null, winnerTeamId: null, status: "scheduled" as const, startedAt: null }
             : match;
         });
-        if (current.settings.format === "knockout") matches = settleKnockout(matches);
+        if (current.settings.format === "groups" && target?.stage === "group") {
+          matches = matches.map((match) =>
+            match.stage === "semifinal" || match.stage === "final"
+              ? { ...match, homeTeamId: null, awayTeamId: null, homeScore: null, awayScore: null, winnerTeamId: null, status: "pending" as const, startedAt: null }
+              : match,
+          );
+        }
+        matches = settleMatches(current, matches);
         return { ...current, matches };
       }),
-    [mutate],
+    [mutate, settleMatches],
   );
 
   const resetDemo = useCallback(
@@ -406,6 +548,7 @@ export function TournamentProvider({ children }: PropsWithChildren) {
       visibleTournaments,
       activeTournamentId,
       hasPublicAccess,
+      selectedTeamId,
       synced,
       supabaseEnabled,
       refreshTournaments,
@@ -415,19 +558,24 @@ export function TournamentProvider({ children }: PropsWithChildren) {
       createTournament,
       deleteTournament,
       regenerateAssociationCode,
+      selectMyTeam,
       addTeam,
       removeTeam,
       updateSettings,
       generateFixture,
       updateResult,
+      updateLiveScore,
+      callPlayers,
+      startMatch,
+      finishMatch,
       clearResult,
       resetDemo,
     }),
     [
-      activeState, tournaments, visibleTournaments, activeTournamentId, hasPublicAccess, synced,
+      activeState, tournaments, visibleTournaments, activeTournamentId, hasPublicAccess, selectedTeamId, synced,
       refreshTournaments, associateTournament, removeAssociation, selectTournament, createTournament,
-      deleteTournament, regenerateAssociationCode, addTeam, removeTeam, updateSettings, generateFixture,
-      updateResult, clearResult, resetDemo,
+      deleteTournament, regenerateAssociationCode, selectMyTeam, addTeam, removeTeam, updateSettings, generateFixture,
+      updateResult, updateLiveScore, callPlayers, startMatch, finishMatch, clearResult, resetDemo,
     ],
   );
 
