@@ -194,6 +194,29 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(0, 174, 234,
 .group-standings-grid section + section { margin-top: 0; }
 .group-finals { margin-top: 48px; }
 
+.status-view { min-height: calc(100vh - 126px); padding: 45px 20px 120px; color: white; background: radial-gradient(circle at 50% 0%, #0b557c, var(--navy) 48%, #03111f); }
+.status-view__inner { width: min(100%, 1100px); margin: auto; }
+.status-view__header { display: flex; justify-content: space-between; align-items: end; gap: 18px; margin-bottom: 25px; }
+.status-view__header h1 { margin: 5px 0 0; font: 900 clamp(44px, 8vw, 76px)/.9 "Barlow Condensed", sans-serif; text-transform: uppercase; }
+.status-live-indicator { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; padding: 8px 11px; border: 1px solid rgba(255,255,255,.14); border-radius: 100px; color: #a6e7f7; background: rgba(255,255,255,.07); font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+.status-live-indicator svg { color: #2cd4ff; animation: live-pulse 1.7s ease-in-out infinite; }
+.status-scoreboards { display: grid; gap: 16px; }
+.status-scoreboard { overflow: hidden; border: 1px solid rgba(0,174,234,.4); border-radius: 25px; background: linear-gradient(140deg, rgba(9,49,77,.96), rgba(3,20,36,.98)); box-shadow: 0 24px 70px rgba(0,0,0,.32), inset 0 1px rgba(255,255,255,.06); }
+.status-scoreboard__top, .status-scoreboard__bottom { min-height: 45px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; padding: 0 20px; color: #9eb8c8; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; }
+.status-scoreboard__top > strong { color: white; font: 800 25px/1 "Barlow Condensed", sans-serif; letter-spacing: .08em; font-variant-numeric: tabular-nums; }
+.status-scoreboard__top > span:last-child { justify-self: end; }
+.status-scoreboard__match { min-height: 235px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(190px, .7fr) minmax(0, 1fr); align-items: center; gap: 20px; padding: 25px 38px; border-top: 1px solid rgba(255,255,255,.07); border-bottom: 1px solid rgba(255,255,255,.07); background: radial-gradient(circle at center, rgba(0,174,234,.13), transparent 55%); }
+.status-scoreboard__team { min-width: 0; display: grid; justify-items: center; gap: 13px; text-align: center; }
+.status-scoreboard__team .team-mark { width: 76px; height: 76px; border-radius: 23px; font-size: 17px; }
+.status-scoreboard__team strong { max-width: 100%; overflow: hidden; color: white; font: 800 clamp(25px, 4vw, 38px)/1 "Barlow Condensed", sans-serif; text-overflow: ellipsis; text-transform: uppercase; }
+.status-scoreboard__score { display: flex; justify-content: center; align-items: center; gap: 17px; color: #7494a8; }
+.status-scoreboard__score strong { min-width: 72px; color: white; font: 900 clamp(82px, 14vw, 142px)/.8 "Barlow Condensed", sans-serif; text-align: center; font-variant-numeric: tabular-nums; text-shadow: 0 8px 35px rgba(0,174,234,.25); }
+.status-scoreboard__score span { font: 800 42px/1 "Barlow Condensed", sans-serif; }
+.status-scoreboard__bottom { grid-template-columns: 1fr auto; }
+.status-scoreboard__bottom span:last-child { color: var(--sky); }
+.status-standings > p { margin: 0 0 15px; color: #a9c1cf; font-size: 11px; }
+.status-standings .table-card { border-color: rgba(255,255,255,.11); box-shadow: 0 25px 65px rgba(0,0,0,.25); }
+
 .bracket { min-width: 850px; display: flex; align-items: stretch; gap: 18px; overflow-x: auto; padding: 8px 4px 35px; scrollbar-color: var(--sky) transparent; }
 .bracket-round { flex: 1 0 245px; display: flex; flex-direction: column; }
 .bracket-round__title { display: flex; justify-content: space-between; color: var(--navy); font: 800 18px "Barlow Condensed", sans-serif; text-transform: uppercase; padding: 0 4px 10px; }
@@ -436,6 +459,26 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(0, 174, 234,
   .table-card { overflow-x: auto; }
   .standings-row { min-width: 490px; padding: 0 12px; }
   .legend-card { display: grid; gap: 3px; }
+  .status-view { min-height: calc(100vh - 112px); padding: 30px 12px 100px; }
+  .status-view__header { display: grid; gap: 13px; margin-bottom: 18px; }
+  .status-view__header h1 { font-size: 46px; }
+  .status-live-indicator { justify-self: start; }
+  .status-scoreboard { border-radius: 18px; }
+  .status-scoreboard__top, .status-scoreboard__bottom { min-height: 40px; padding: 0 11px; font-size: 7px; gap: 6px; }
+  .status-scoreboard__top > strong { font-size: 21px; }
+  .status-scoreboard__match { min-height: 180px; grid-template-columns: minmax(0, 1fr) 108px minmax(0, 1fr); gap: 6px; padding: 20px 8px; }
+  .status-scoreboard__team { gap: 8px; }
+  .status-scoreboard__team .team-mark { width: 50px; height: 50px; border-radius: 15px; font-size: 11px; }
+  .status-scoreboard__team strong { font-size: 19px; }
+  .status-scoreboard__score { gap: 5px; }
+  .status-scoreboard__score strong { min-width: 37px; font-size: 66px; }
+  .status-scoreboard__score span { font-size: 27px; }
+  .status-scoreboard__bottom span:last-child { text-align: right; }
+  .status-standings { overflow-x: hidden; }
+  .status-standings .standings-row { min-width: 0; grid-template-columns: 28px minmax(0, 1fr) 28px 34px 34px; padding: 0 8px; font-size: 10px; }
+  .status-standings .standing-team { min-width: 0; gap: 6px; }
+  .status-standings .standing-team span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .status-standings .standing-team .team-mark { width: 23px; height: 23px; font-size: 6px; }
   .teams-grid { grid-template-columns: 1fr; }
   .group-standings-grid { grid-template-columns: 1fr; }
   .my-team-card { grid-template-columns: 1fr; padding: 16px; }

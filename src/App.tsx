@@ -43,7 +43,7 @@ import { useTournament } from "./lib/store";
 import { hasAdminSession, signInAdmin } from "./lib/supabase";
 import type { Match, Team, TournamentFormat } from "./lib/types";
 
-type View = "inicio" | "partidos" | "competencia" | "equipos" | "admin";
+type View = "inicio" | "estado" | "partidos" | "competencia" | "equipos" | "admin";
 
 const formatDate = (value: string) =>
   new Intl.DateTimeFormat("es-AR", {
@@ -71,6 +71,20 @@ function LiveMinute({ startedAt }: { startedAt?: string | null }) {
   if (!startedAt) return <>En vivo</>;
   const minutes = Math.max(1, Math.floor((now - new Date(startedAt).getTime()) / 60000) + 1);
   return <><Radio size={11} /> {minutes}'</>;
+}
+
+function MatchClock({ startedAt }: { startedAt?: string | null }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const elapsedSeconds = startedAt
+    ? Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / 1000))
+    : 0;
+  const minutes = Math.floor(elapsedSeconds / 60);
+  const seconds = String(elapsedSeconds % 60).padStart(2, "0");
+  return <>{String(minutes).padStart(2, "0")}:{seconds}</>;
 }
 
 function Logo({ small = false }: { small?: boolean }) {
@@ -320,6 +334,75 @@ function MatchesView() {
             </div>
           </section>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function LiveScoreboard({ match, teams }: { match: Match; teams: Team[] }) {
+  const home = teams.find((team) => team.id === match.homeTeamId);
+  const away = teams.find((team) => team.id === match.awayTeamId);
+  return (
+    <article className="status-scoreboard">
+      <div className="status-scoreboard__top">
+        <span className="pill pill--playing"><Radio size={12} /> En vivo</span>
+        <strong><MatchClock startedAt={match.startedAt} /></strong>
+        <span>{match.field}</span>
+      </div>
+      <div className="status-scoreboard__match">
+        <div className="status-scoreboard__team">
+          <TeamMark team={home} />
+          <strong>{home?.name ?? "A definir"}</strong>
+        </div>
+        <div className="status-scoreboard__score">
+          <strong>{match.homeScore ?? 0}</strong>
+          <span>:</span>
+          <strong>{match.awayScore ?? 0}</strong>
+        </div>
+        <div className="status-scoreboard__team status-scoreboard__team--away">
+          <TeamMark team={away} />
+          <strong>{away?.name ?? "A definir"}</strong>
+        </div>
+      </div>
+      <div className="status-scoreboard__bottom">
+        <span>{match.roundLabel}</span>
+        <span>Actualización en vivo</span>
+      </div>
+    </article>
+  );
+}
+
+function StatusView() {
+  const { state, refreshTournaments, supabaseEnabled } = useTournament();
+  const liveMatches = state.matches.filter((match) => match.status === "live");
+
+  useEffect(() => {
+    if (!supabaseEnabled) return;
+    refreshTournaments().catch(() => undefined);
+    const timer = window.setInterval(() => refreshTournaments().catch(() => undefined), 5000);
+    return () => window.clearInterval(timer);
+  }, [refreshTournaments, supabaseEnabled]);
+
+  return (
+    <div className={`status-view ${liveMatches.length ? "status-view--live" : ""}`}>
+      <div className="status-view__inner">
+        <header className="status-view__header">
+          <div>
+            <span className="eyebrow">{liveMatches.length ? "Ahora mismo" : "Estado del torneo"}</span>
+            <h1>{liveMatches.length ? "Partidos en juego" : "Tabla en vivo"}</h1>
+          </div>
+          <span className="status-live-indicator"><Radio size={13} /> Actualizando en vivo</span>
+        </header>
+        {liveMatches.length ? (
+          <div className="status-scoreboards">
+            {liveMatches.map((match) => <LiveScoreboard key={match.id} match={match} teams={state.teams} />)}
+          </div>
+        ) : (
+          <div className="status-standings">
+            <p>No hay partidos en juego. La tabla incluye todos los resultados cargados hasta ahora.</p>
+            <StandingsTable teams={state.teams} matches={state.matches} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -977,6 +1060,7 @@ function Header({ view, navigate }: { view: View; navigate: (view: View) => void
   const [open, setOpen] = useState(false);
   const links: { id: View; label: string }[] = [
     { id: "inicio", label: "Inicio" },
+    { id: "estado", label: "Estado" },
     { id: "partidos", label: "Partidos" },
     { id: "competencia", label: state.settings.format === "league" ? "Posiciones" : state.settings.format === "groups" ? "Grupos" : "Llaves" },
     { id: "equipos", label: "Equipos" },
@@ -1117,9 +1201,9 @@ function BottomNav({ view, navigate }: { view: View; navigate: (view: View) => v
   const { state } = useTournament();
   const items = useMemo(() => [
     { id: "inicio" as View, label: "Inicio", icon: Home },
+    { id: "estado" as View, label: "Estado", icon: Radio },
     { id: "partidos" as View, label: "Partidos", icon: CalendarDays },
     { id: "competencia" as View, label: state.settings.format === "league" ? "Tabla" : state.settings.format === "groups" ? "Grupos" : "Llaves", icon: Trophy },
-    { id: "equipos" as View, label: "Equipos", icon: Shield },
   ], [state.settings.format]);
   return (
     <nav className="bottom-nav">
@@ -1149,6 +1233,7 @@ export default function App() {
         ) : (
           <>
             {view === "inicio" ? <HomeView navigate={navigate} /> : null}
+            {view === "estado" ? <StatusView /> : null}
             {view === "partidos" ? <MatchesView /> : null}
             {view === "competencia" ? <CompetitionView /> : null}
             {view === "equipos" ? <TeamsView /> : null}
