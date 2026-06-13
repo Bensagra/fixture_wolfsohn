@@ -250,7 +250,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(0, 174, 234,
 .active-admin-tournament span { color: var(--blue); font-size: 8px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 .active-admin-tournament strong { color: var(--navy); font-size: 12px; }
 .active-admin-tournament small { margin-left: auto; }
-.sync-status { display: flex; align-items: center; gap: 6px; color: #9c6b24; background: #fff3dc; padding: 8px 10px; border-radius: 100px; font-size: 9px; font-weight: 800; text-transform: uppercase; }
+.sync-status { display: flex; align-items: center; gap: 6px; border: 0; color: #9c6b24; background: #fff3dc; padding: 8px 10px; border-radius: 100px; font-size: 9px; font-weight: 800; text-transform: uppercase; }
 .sync-status--ok { background: #e4f6ed; color: #17815a; }
 .admin-tabs { width: min(100% - 40px, 980px); margin: 0 auto 24px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 5px; border-radius: 14px; background: #dfe5e8; }
 .admin-tabs button { display: flex; justify-content: center; align-items: center; gap: 7px; min-height: 40px; color: #71818b; border: 0; border-radius: 10px; background: transparent; font-size: 10px; font-weight: 800; text-transform: uppercase; }

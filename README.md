@@ -51,3 +51,8 @@ push por equipo. Para activar el envío push:
 3. Usar la misma clave pública como `VITE_VAPID_PUBLIC_KEY`.
 
 Las claves generadas localmente están en `.env.push.local`, que está ignorado por Git.
+La clave pública también tiene un fallback incorporado en el frontend; la clave privada
+debe permanecer únicamente como secret de la Edge Function.
+
+Los estados en vivo se guardan en cola para conservar el orden, ignoran ecos Realtime
+viejos y se actualizan al volver a abrir la app o cada 20 segundos como respaldo.

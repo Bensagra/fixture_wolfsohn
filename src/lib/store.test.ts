@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   createTournamentState,
   generateAssociationCode,
+  nextTimestamp,
   normalizeAssociationCode,
+  shouldAcceptRemoteUpdate,
 } from "./store";
 
 describe("múltiples torneos", () => {
@@ -27,5 +29,20 @@ describe("múltiples torneos", () => {
   it("normaliza códigos y evita caracteres confusos", () => {
     expect(normalizeAssociationCode(" or-20 26 ")).toBe("OR2026");
     expect(generateAssociationCode()).toMatch(/^[A-HJ-NP-Z2-9]{6}$/);
+  });
+
+  it("ignora ecos realtime viejos y mantiene timestamps crecientes", () => {
+    const local = createTournamentState("En vivo", "league");
+    local.lastUpdated = "2026-06-13T20:00:00.100Z";
+    const echo = { ...local, lastUpdated: "2026-06-13T20:00:00.100Z" };
+    const old = { ...local, lastUpdated: "2026-06-13T20:00:00.000Z" };
+    const newer = { ...local, lastUpdated: "2026-06-13T20:00:00.200Z" };
+
+    expect(shouldAcceptRemoteUpdate(local, echo)).toBe(false);
+    expect(shouldAcceptRemoteUpdate(local, old)).toBe(false);
+    expect(shouldAcceptRemoteUpdate(local, newer)).toBe(true);
+    expect(new Date(nextTimestamp(local.lastUpdated)).getTime()).toBeGreaterThan(
+      new Date(local.lastUpdated).getTime(),
+    );
   });
 });

@@ -125,7 +125,7 @@ export async function saveRemoteTournament(state: TournamentState) {
     id: state.id,
     association_code: state.associationCode,
     data: state,
-    updated_at: new Date().toISOString(),
+    updated_at: state.lastUpdated,
   });
   if (error) throw error;
   return true;

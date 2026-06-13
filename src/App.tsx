@@ -615,10 +615,11 @@ function AdminView() {
     <div className="admin-shell">
       <header className="admin-header">
         <div><span className="eyebrow">Control central</span><h1>Panel admin</h1></div>
-        <div className={`sync-status ${tournament.synced ? "sync-status--ok" : ""}`}>
+        <button className={`sync-status ${tournament.synced ? "sync-status--ok" : ""}`} onClick={() => tournament.syncNow()}>
           {tournament.supabaseEnabled ? tournament.synced ? <Cloud size={15} /> : <CloudOff size={15} /> : <CloudOff size={15} />}
-          {tournament.supabaseEnabled ? tournament.synced ? "Sincronizado" : "Guardando..." : "Guardado local"}
-        </div>
+          {tournament.supabaseEnabled ? tournament.synced ? "Sincronizado" : "Guardar ahora" : "Guardado local"}
+          {tournament.supabaseEnabled ? <RefreshCcw size={12} /> : null}
+        </button>
       </header>
       <div className="active-admin-tournament">
         <span>Editando</span>

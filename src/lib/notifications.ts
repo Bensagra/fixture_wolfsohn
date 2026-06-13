@@ -1,5 +1,10 @@
 import { savePushSubscription } from "./supabase";
 
+// This key is intentionally public and must match the private VAPID key configured
+// only in the Supabase Edge Function.
+const DEFAULT_VAPID_PUBLIC_KEY =
+  "BPU8R39c2tDj-B5f3prSiS-Gr7q1XuJRqpyBub-5m8k3tSrOrg35NUKWReieW0jzPdJUlyfIVvpWYKSLHqr9Ji0";
+
 function urlBase64ToUint8Array(value: string) {
   const padding = "=".repeat((4 - (value.length % 4)) % 4);
   const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -16,8 +21,7 @@ export async function enableTeamNotifications(tournamentId: string, teamId: stri
   const permission = await Notification.requestPermission();
   if (permission !== "granted") throw new Error("No se otorgó permiso para notificaciones.");
   const registration = await navigator.serviceWorker.ready;
-  const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
-  if (!vapidKey) throw new Error("Falta configurar VITE_VAPID_PUBLIC_KEY.");
+  const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY || DEFAULT_VAPID_PUBLIC_KEY;
   const existing = await registration.pushManager.getSubscription();
   const subscription =
     existing ??

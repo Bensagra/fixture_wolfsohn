@@ -1,4 +1,4 @@
-const CACHE = "or-hanoar-v1";
+const CACHE = "or-hanoar-v2";
 const SHELL = ["/", "/manifest.webmanifest", "/pwa-192.png", "/pwa-512.png"];
 
 self.addEventListener("install", (event) => {

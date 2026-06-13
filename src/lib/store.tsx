@@ -52,6 +52,19 @@ export function generateAssociationCode(length = 6) {
   ).join("");
 }
 
+export function nextTimestamp(previous: string) {
+  const now = Date.now();
+  const previousTime = new Date(previous).getTime();
+  return new Date(Math.max(now, Number.isFinite(previousTime) ? previousTime + 1 : now)).toISOString();
+}
+
+export function shouldAcceptRemoteUpdate(existing: TournamentState, updated: TournamentState) {
+  const existingTime = new Date(existing.lastUpdated).getTime();
+  const updatedTime = new Date(updated.lastUpdated).getTime();
+  if (!Number.isFinite(existingTime) || !Number.isFinite(updatedTime)) return true;
+  return updatedTime > existingTime;
+}
+
 function team(name: string, index: number): Team {
   return {
     id: crypto.randomUUID(),
@@ -141,6 +154,7 @@ interface TournamentContextValue {
   synced: boolean;
   supabaseEnabled: boolean;
   refreshTournaments: () => Promise<void>;
+  syncNow: () => Promise<void>;
   associateTournament: (code: string) => Promise<"success" | "invalid" | "already-added" | "unpublished">;
   removeAssociation: (id: string) => void;
   selectTournament: (id: string) => void;
@@ -172,6 +186,8 @@ export function TournamentProvider({ children }: PropsWithChildren) {
   const [synced, setSynced] = useState(!supabaseEnabled);
   const [remoteHydrated, setRemoteHydrated] = useState(!supabaseEnabled);
   const loadedRemote = useRef(false);
+  const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const saveGeneration = useRef(0);
 
   const visibleTournaments = useMemo(
     () =>
@@ -225,12 +241,24 @@ export function TournamentProvider({ children }: PropsWithChildren) {
     localStorage.setItem(ASSOCIATED_CODES_KEY, JSON.stringify(associatedCodes));
     localStorage.setItem(MY_TEAMS_KEY, JSON.stringify(myTeams));
     if (!supabaseEnabled || !loadedRemote.current || !remoteHydrated) return;
+    const generation = ++saveGeneration.current;
     const timer = window.setTimeout(async () => {
       if (!(await hasAdminSession())) return;
       setSynced(false);
-      Promise.all(tournaments.map(saveRemoteTournament))
-        .then((saved) => setSynced(saved.every(Boolean)))
-        .catch(() => setSynced(false));
+      const snapshot = tournaments.map((tournament) => ({
+        ...tournament,
+        teams: [...tournament.teams],
+        matches: tournament.matches.map((match) => ({ ...match })),
+      }));
+      saveQueue.current = saveQueue.current
+        .catch(() => undefined)
+        .then(() => Promise.all(snapshot.map(saveRemoteTournament)))
+        .then((saved) => {
+          if (generation === saveGeneration.current) setSynced(saved.every(Boolean));
+        })
+        .catch(() => {
+          if (generation === saveGeneration.current) setSynced(false);
+        });
     }, 500);
     return () => window.clearTimeout(timer);
   }, [tournaments, activeTournamentId, associatedCodes, myTeams, remoteHydrated]);
@@ -238,20 +266,56 @@ export function TournamentProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (!supabaseEnabled) return;
     return subscribeToTournamentChanges((updated) => {
-      setTournaments((current) =>
-        current.some((item) => item.id === updated.id)
-          ? current.map((item) => (item.id === updated.id ? updated : item))
-          : current,
-      );
+      setTournaments((current) => {
+        const existing = current.find((item) => item.id === updated.id);
+        if (!existing) return current;
+        if (!shouldAcceptRemoteUpdate(existing, updated)) return current;
+        return current.map((item) => (item.id === updated.id ? updated : item));
+      });
     });
   }, []);
+
+  useEffect(() => {
+    if (!supabaseEnabled) return;
+    const refreshIfVisible = () => {
+      if (document.visibilityState === "visible" && synced) {
+        refreshTournaments().catch(() => setSynced(false));
+      }
+    };
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    const timer = window.setInterval(refreshIfVisible, 20000);
+    return () => {
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+      window.clearInterval(timer);
+    };
+  }, [refreshTournaments, synced]);
+
+  const syncNow = useCallback(async () => {
+    if (!supabaseEnabled || !(await hasAdminSession())) return;
+    const generation = ++saveGeneration.current;
+    setSynced(false);
+    const snapshot = tournaments.map((tournament) => ({
+      ...tournament,
+      teams: [...tournament.teams],
+      matches: tournament.matches.map((match) => ({ ...match })),
+    }));
+    saveQueue.current = saveQueue.current
+      .catch(() => undefined)
+      .then(() => Promise.all(snapshot.map(saveRemoteTournament)));
+    try {
+      const saved = (await saveQueue.current) as boolean[];
+      if (generation === saveGeneration.current) setSynced(saved.every(Boolean));
+    } catch {
+      if (generation === saveGeneration.current) setSynced(false);
+    }
+  }, [tournaments]);
 
   const mutate = useCallback(
     (updater: (current: TournamentState) => TournamentState) => {
       setTournaments((current) =>
         current.map((item) =>
           item.id === activeTournamentId
-            ? { ...updater(item), lastUpdated: new Date().toISOString() }
+            ? { ...updater(item), lastUpdated: nextTimestamp(item.lastUpdated) }
             : item,
         ),
       );
@@ -552,6 +616,7 @@ export function TournamentProvider({ children }: PropsWithChildren) {
       synced,
       supabaseEnabled,
       refreshTournaments,
+      syncNow,
       associateTournament,
       removeAssociation,
       selectTournament,
@@ -573,7 +638,7 @@ export function TournamentProvider({ children }: PropsWithChildren) {
     }),
     [
       activeState, tournaments, visibleTournaments, activeTournamentId, hasPublicAccess, selectedTeamId, synced,
-      refreshTournaments, associateTournament, removeAssociation, selectTournament, createTournament,
+      refreshTournaments, syncNow, associateTournament, removeAssociation, selectTournament, createTournament,
       deleteTournament, regenerateAssociationCode, selectMyTeam, addTeam, removeTeam, updateSettings, generateFixture,
       updateResult, updateLiveScore, callPlayers, startMatch, finishMatch, clearResult, resetDemo,
     ],
