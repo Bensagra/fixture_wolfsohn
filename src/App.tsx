@@ -537,6 +537,30 @@ function MyTeamCard() {
   );
 }
 
+function TeamSelectionModal() {
+  const { state, selectMyTeam } = useTournament();
+  return (
+    <div className="modal-backdrop team-selection-backdrop">
+      <section className="team-selection-modal" role="dialog" aria-modal="true" aria-labelledby="team-selection-title">
+        <Logo />
+        <span className="eyebrow">Un último paso</span>
+        <h2 id="team-selection-title">¿De qué equipo sos?</h2>
+        <p>Lo guardamos anónimamente en este teléfono para mostrarte tus partidos y enviarte avisos.</p>
+        <div className="team-selection-grid">
+          {state.teams.map((team) => (
+            <button type="button" key={team.id} onClick={() => selectMyTeam(team.id)}>
+              <TeamMark team={team} />
+              <strong>{team.name}</strong>
+              <span>Elegir equipo</span>
+            </button>
+          ))}
+        </div>
+        <small>Después podés cambiarlo desde la pantalla de inicio.</small>
+      </section>
+    </div>
+  );
+}
+
 function AdminView() {
   const tournament = useTournament();
   const { state } = tournament;
@@ -987,6 +1011,10 @@ function AssociationForm({ onSuccess }: { onSuccess?: () => void }) {
   const [loading, setLoading] = useState(false);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (!/^\d{4}$/.test(code)) {
+      setStatus("Ingresá las 4 cifras del código.");
+      return;
+    }
     setLoading(true);
     setStatus("");
     const result = await associateTournament(code);
@@ -1009,14 +1037,18 @@ function AssociationForm({ onSuccess }: { onSuccess?: () => void }) {
         <span>Código de asociación</span>
         <input
           value={code}
-          onChange={(event) => setCode(event.target.value.toUpperCase())}
-          placeholder="Ej: OR2026"
-          maxLength={12}
+          onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 4))}
+          placeholder="Ej: 2026"
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          autoComplete="one-time-code"
+          maxLength={4}
           autoFocus
         />
       </label>
       {status ? <span className="association-error">{status}</span> : null}
-      <button className="primary-button" type="submit" disabled={loading}>
+      <button className="primary-button" type="submit" disabled={loading || code.length !== 4}>
         <Plus size={17} /> {loading ? "Buscando..." : "Agregar torneo"}
       </button>
     </form>
@@ -1072,7 +1104,7 @@ function BottomNav({ view, navigate }: { view: View; navigate: (view: View) => v
 
 export default function App() {
   const [view, setView] = useState<View>("inicio");
-  const { state, hasPublicAccess } = useTournament();
+  const { state, hasPublicAccess, selectedTeamId } = useTournament();
   const navigate = (next: View) => {
     setView(next);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1099,6 +1131,9 @@ export default function App() {
         )}
       </main>
       {view !== "admin" && hasPublicAccess ? <BottomNav view={view} navigate={navigate} /> : null}
+      {view !== "admin" && hasPublicAccess && state.teams.length > 0 && !selectedTeamId ? (
+        <TeamSelectionModal />
+      ) : null}
     </div>
   );
 }

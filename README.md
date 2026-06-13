@@ -14,6 +14,10 @@ El panel administrador usa el PIN `1313` mientras no se configure `VITE_ADMIN_PI
 
 ## Supabase
 
+Si el proyecto ya tenía códigos alfanuméricos, ejecutá una vez
+`supabase/numeric-codes-migration.sql` desde el SQL Editor de Supabase. Esto
+convierte todos los torneos a códigos PIN únicos de cuatro cifras.
+
 1. Crear un proyecto en Supabase.
 2. Ejecutar `supabase/schema.sql` en el SQL Editor.
 3. En Authentication > Users, crear el usuario administrador con email y contraseña.

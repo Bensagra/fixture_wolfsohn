@@ -41,15 +41,21 @@ const MY_TEAMS_KEY = "or-hanoar-my-teams";
 const colors = ["#00aeea", "#124b9d", "#7c4dff", "#18a77b", "#ef8f35", "#df3f63"];
 
 export function normalizeAssociationCode(value: string) {
-  return value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return value.replace(/\D/g, "").slice(0, 4);
 }
 
-export function generateAssociationCode(length = 6) {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  return Array.from(
-    crypto.getRandomValues(new Uint8Array(length)),
-    (value) => alphabet[value % alphabet.length],
-  ).join("");
+export function generateAssociationCode() {
+  const [value] = crypto.getRandomValues(new Uint32Array(1));
+  return String(1000 + (value % 9000));
+}
+
+function generateUniqueAssociationCode(existingCodes: Iterable<string>) {
+  const existing = new Set(Array.from(existingCodes, normalizeAssociationCode));
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const code = generateAssociationCode();
+    if (!existing.has(code)) return code;
+  }
+  throw new Error("No pudimos generar un código de torneo único.");
 }
 
 export function nextTimestamp(previous: string) {
@@ -108,7 +114,7 @@ export function createTournamentState(
     : [];
   return {
     id: withDemoTeams ? "mundial-or-hanoar" : slugify(title),
-    associationCode: withDemoTeams ? "OR2026" : generateAssociationCode(),
+    associationCode: withDemoTeams ? "2026" : generateAssociationCode(),
     settings,
     teams,
     matches:
@@ -126,10 +132,16 @@ function readLocal(): { tournaments: TournamentState[]; activeId: string; associ
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     const tournaments = stored ? (JSON.parse(stored) as TournamentState[]) : [fallback];
-    const migrated = tournaments.map((item) => ({
-      ...item,
-      associationCode: item.associationCode || generateAssociationCode(),
-    }));
+    const migratedCodes = new Set<string>();
+    const migrated = tournaments.map((item) => {
+      const currentCode = normalizeAssociationCode(item.associationCode || "");
+      const associationCode =
+        /^\d{4}$/.test(currentCode) && !migratedCodes.has(currentCode)
+          ? currentCode
+          : generateUniqueAssociationCode(migratedCodes);
+      migratedCodes.add(associationCode);
+      return { ...item, associationCode };
+    });
     const requested = localStorage.getItem(ACTIVE_KEY);
     const codes = JSON.parse(localStorage.getItem(ASSOCIATED_CODES_KEY) || "[]") as string[];
     const myTeams = JSON.parse(localStorage.getItem(MY_TEAMS_KEY) || "{}") as Record<string, string>;
@@ -204,7 +216,10 @@ export function TournamentProvider({ children }: PropsWithChildren) {
     tournaments[0] ??
     createTournamentState();
   const hasPublicAccess = visibleTournaments.some((item) => item.id === activeTournamentId);
-  const selectedTeamId = myTeams[activeTournamentId] ?? null;
+  const storedSelectedTeamId = myTeams[activeTournamentId] ?? null;
+  const selectedTeamId = activeState.teams.some((item) => item.id === storedSelectedTeamId)
+    ? storedSelectedTeamId
+    : null;
 
   const refreshTournaments = useCallback(async () => {
     if (!supabaseEnabled) return;
@@ -326,7 +341,7 @@ export function TournamentProvider({ children }: PropsWithChildren) {
   const associateTournament = useCallback(
     async (input: string) => {
       const code = normalizeAssociationCode(input);
-      if (!code) return "invalid";
+      if (!/^\d{4}$/.test(code)) return "invalid";
       if (associatedCodes.includes(code)) return "already-added";
       const tournament = supabaseEnabled
         ? await loadRemoteTournamentByCode(code).catch(() => null)
@@ -365,9 +380,14 @@ export function TournamentProvider({ children }: PropsWithChildren) {
   );
 
   const createTournament = useCallback((title: string, format: TournamentFormat) => {
-    const tournament = createTournamentState(title.trim(), format);
-    setTournaments((current) => [...current, tournament]);
-    setActiveTournamentId(tournament.id);
+    setTournaments((current) => {
+      const tournament = {
+        ...createTournamentState(title.trim(), format),
+        associationCode: generateUniqueAssociationCode(current.map((item) => item.associationCode)),
+      };
+      setActiveTournamentId(tournament.id);
+      return [...current, tournament];
+    });
   }, []);
 
   const deleteTournament = useCallback(
@@ -388,7 +408,9 @@ export function TournamentProvider({ children }: PropsWithChildren) {
   );
 
   const regenerateAssociationCode = useCallback((id: string) => {
-    const code = generateAssociationCode();
+    const code = generateUniqueAssociationCode(
+      tournaments.filter((item) => item.id !== id).map((item) => item.associationCode),
+    );
     setTournaments((current) =>
       current.map((item) =>
         item.id === id
@@ -397,7 +419,7 @@ export function TournamentProvider({ children }: PropsWithChildren) {
       ),
     );
     return code;
-  }, []);
+  }, [tournaments]);
 
   const selectMyTeam = useCallback(
     (teamId: string | null) => {

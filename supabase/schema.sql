@@ -1,6 +1,7 @@
 create table if not exists public.tournaments (
   id text primary key,
-  association_code text not null unique default upper(substr(md5(random()::text || clock_timestamp()::text), 1, 8)),
+  association_code text not null unique default (1000 + floor(random() * 9000)::integer)::text
+    check (association_code ~ '^[0-9]{4}$'),
   data jsonb not null,
   updated_at timestamptz not null default now()
 );
@@ -27,7 +28,7 @@ set search_path = public
 as $$
   select data || jsonb_build_object('associationCode', association_code)
   from public.tournaments
-  where association_code = upper(regexp_replace(code_input, '[^A-Za-z0-9]', '', 'g'))
+  where association_code = left(regexp_replace(code_input, '[^0-9]', '', 'g'), 4)
     and coalesce((data->'settings'->>'published')::boolean, false)
   limit 1;
 $$;

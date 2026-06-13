@@ -19,16 +19,16 @@ describe("múltiples torneos", () => {
     expect(cup.settings.format).toBe("knockout");
     expect(league.settings.published).toBe(false);
     expect(cup.settings.published).toBe(false);
-    expect(league.associationCode).toHaveLength(6);
-    expect(cup.associationCode).toHaveLength(6);
+    expect(league.associationCode).toHaveLength(4);
+    expect(cup.associationCode).toHaveLength(4);
     expect(league.associationCode).not.toBe(cup.associationCode);
     expect(league.teams).not.toBe(cup.teams);
     expect(league.matches).not.toBe(cup.matches);
   });
 
-  it("normaliza códigos y evita caracteres confusos", () => {
-    expect(normalizeAssociationCode(" or-20 26 ")).toBe("OR2026");
-    expect(generateAssociationCode()).toMatch(/^[A-HJ-NP-Z2-9]{6}$/);
+  it("normaliza códigos como PIN de cuatro cifras", () => {
+    expect(normalizeAssociationCode(" or-20 26-99 ")).toBe("2026");
+    expect(generateAssociationCode()).toMatch(/^\d{4}$/);
   });
 
   it("ignora ecos realtime viejos y mantiene timestamps crecientes", () => {

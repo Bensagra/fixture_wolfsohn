@@ -2,11 +2,11 @@ alter table public.tournaments
 add column if not exists association_code text;
 
 update public.tournaments
-set association_code = upper(substr(md5(random()::text || clock_timestamp()::text || id), 1, 8))
+set association_code = (1000 + floor(random() * 9000)::integer)::text
 where association_code is null;
 
 alter table public.tournaments
-alter column association_code set default upper(substr(md5(random()::text || clock_timestamp()::text), 1, 8)),
+alter column association_code set default (1000 + floor(random() * 9000)::integer)::text,
 alter column association_code set not null;
 
 create unique index if not exists tournaments_association_code_key
@@ -29,7 +29,7 @@ set search_path = public
 as $$
   select data || jsonb_build_object('associationCode', association_code)
   from public.tournaments
-  where association_code = upper(regexp_replace(code_input, '[^A-Za-z0-9]', '', 'g'))
+  where association_code = left(regexp_replace(code_input, '[^0-9]', '', 'g'), 4)
     and coalesce((data->'settings'->>'published')::boolean, false)
   limit 1;
 $$;
