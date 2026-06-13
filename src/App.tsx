@@ -755,7 +755,7 @@ function TournamentsAdmin({ onManage }: { onManage: () => void }) {
         <div>
           <span className="eyebrow">Nueva competencia</span>
           <h2>Crear otro torneo</h2>
-          <p>Va a tener sus propios equipos, fixture y resultados.</p>
+          <p>Después elegís qué equipos del catálogo participan; tendrá su propio fixture y resultados.</p>
         </div>
         <form onSubmit={submit}>
           <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Ej: Copa Secundaria" />
@@ -795,6 +795,21 @@ function TournamentAdmin() {
             <Users /><strong>Grupos + finales</strong><span>Dos grupos, semis y final</span>
           </button>
         </div>
+        {settings.format === "league" ? (
+          <div className="league-legs-picker">
+            <div>
+              <span className="eyebrow">Ruedas de la liga</span>
+              <strong>¿Cómo se enfrentan?</strong>
+              <small>Define si cada cruce se juega una vez o con revancha.</small>
+            </div>
+            <button className={(settings.leagueLegs ?? 1) === 1 ? "active" : ""} onClick={() => change("leagueLegs", 1)}>
+              <Check size={16} /><strong>Una rueda</strong><span>Todos contra todos una vez</span>
+            </button>
+            <button className={settings.leagueLegs === 2 ? "active" : ""} onClick={() => change("leagueLegs", 2)}>
+              <RefreshCcw size={16} /><strong>Ida y vuelta</strong><span>Revancha invirtiendo localía</span>
+            </button>
+          </div>
+        ) : null}
       </section>
       <section className="admin-card">
         <SectionHeader eyebrow="Información pública" title="Datos del torneo" />
@@ -816,7 +831,7 @@ function TournamentAdmin() {
         </label>
       </section>
       <section className="admin-card admin-card--action">
-        <div><span className="eyebrow">Listo para jugar</span><h2>Generar calendario completo</h2><p>Usa los {state.teams.length} equipos, horarios y canchas configuradas.</p></div>
+        <div><span className="eyebrow">Listo para jugar</span><h2>Generar calendario completo</h2><p>Usa únicamente los {state.teams.length} equipos seleccionados, horarios y canchas configuradas.</p></div>
         <button className="primary-button" onClick={regenerate}><Sparkles size={18} /> Generar fixture</button>
       </section>
       <button className="danger-link" onClick={() => confirm("¿Restaurar los datos de ejemplo?") && resetDemo()}><RefreshCcw size={15} /> Restaurar demo</button>
@@ -829,7 +844,7 @@ function Field({ label, children, wide = false }: { label: string; children: Rea
 }
 
 function TeamsAdmin() {
-  const { state, addTeam, removeTeam } = useTournament();
+  const { state, allTeams, addTeam, setTeamParticipation } = useTournament();
   const [name, setName] = useState("");
   const [shortName, setShortName] = useState("");
   const [color, setColor] = useState("#00aeea");
@@ -840,26 +855,37 @@ function TeamsAdmin() {
     setName("");
     setShortName("");
   };
+  const participantIds = new Set(state.teams.map((team) => team.id));
   return (
     <div className="admin-content">
       <section className="admin-card">
-        <SectionHeader eyebrow={`${state.teams.length} cargados`} title="Equipos participantes" />
+        <SectionHeader eyebrow={`${state.teams.length} seleccionados de ${allTeams.length}`} title="Equipos de este torneo" />
         <form className="add-team-form" onSubmit={submit}>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre del equipo" />
           <input value={shortName} maxLength={3} onChange={(e) => setShortName(e.target.value)} placeholder="SIG" />
           <input type="color" value={color} onChange={(e) => setColor(e.target.value)} aria-label="Color del equipo" />
-          <button className="primary-button" type="submit"><Plus size={17} /> Agregar</button>
+          <button className="primary-button" type="submit"><Plus size={17} /> Crear y sumar</button>
         </form>
         <div className="admin-team-list">
-          {state.teams.map((team) => (
-            <div className="admin-team" key={team.id}>
-              <TeamMark team={team} compact />
-              <div><strong>{team.name}</strong><span>{team.shortName}</span></div>
-              <button className="icon-button icon-button--danger" onClick={() => confirm(`¿Eliminar a ${team.name}?`) && removeTeam(team.id)}><Trash2 size={16} /></button>
-            </div>
-          ))}
+          {allTeams.map((team) => {
+            const participating = participantIds.has(team.id);
+            return (
+              <div className={`admin-team ${participating ? "active" : ""}`} key={team.id}>
+                <TeamMark team={team} compact />
+                <div><strong>{team.name}</strong><span>{team.shortName}</span></div>
+                <button
+                  className={`team-participation-toggle ${participating ? "active" : ""}`}
+                  aria-pressed={participating}
+                  onClick={() => setTeamParticipation(team.id, !participating)}
+                >
+                  {participating ? <Check size={14} /> : <Plus size={14} />}
+                  {participating ? "Participa" : "Sumar"}
+                </button>
+              </div>
+            );
+          })}
         </div>
-        <p className="helper-text">Después de cambiar equipos, generá nuevamente el fixture desde la pestaña Torneo.</p>
+        <p className="helper-text">Los equipos pueden participar en varios torneos. Después de cambiar la selección, generá nuevamente el fixture desde la pestaña Torneo.</p>
       </section>
     </div>
   );

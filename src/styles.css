@@ -264,6 +264,15 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(0, 174, 234,
 .format-picker button strong { color: var(--navy); text-transform: uppercase; font: 800 18px "Barlow Condensed", sans-serif; }
 .format-picker button span { font-size: 10px; }
 .format-picker button.active { border-color: var(--sky); color: var(--sky); background: #f2fbfe; box-shadow: 0 0 0 2px rgba(0,174,234,.1); }
+.league-legs-picker { margin-top: 14px; display: grid; grid-template-columns: 1.2fr repeat(2, 1fr); gap: 9px; padding: 12px; border-radius: 14px; background: #f2f6f8; }
+.league-legs-picker > div { display: grid; align-content: center; gap: 3px; padding: 5px 8px; }
+.league-legs-picker > div strong { color: var(--navy); font: 800 18px/1 "Barlow Condensed", sans-serif; text-transform: uppercase; }
+.league-legs-picker > div small { color: var(--muted); font-size: 8px; }
+.league-legs-picker button { min-width: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; align-items: center; text-align: left; padding: 11px; border: 1px solid #dce4e8; border-radius: 11px; color: #82919a; background: white; }
+.league-legs-picker button svg { grid-row: span 2; }
+.league-legs-picker button strong { color: var(--navy); font-size: 10px; text-transform: uppercase; }
+.league-legs-picker button span { font-size: 8px; }
+.league-legs-picker button.active { color: var(--sky); border-color: var(--sky); background: #effaff; box-shadow: 0 0 0 2px rgba(0,174,234,.08); }
 .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
 .field { display: grid; gap: 6px; }
 .field--wide { grid-column: 1 / -1; }
@@ -287,9 +296,12 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(0, 174, 234,
 .add-team-form input[type=color] { padding: 4px; }
 .admin-team-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .admin-team { display: flex; gap: 10px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 12px; }
+.admin-team.active { border-color: rgba(0,174,234,.42); background: #f2fbfe; }
 .admin-team > div { display: grid; }
 .admin-team strong { color: var(--navy); font-size: 11px; }
 .admin-team span { color: var(--muted); font-size: 8px; font-weight: 800; letter-spacing: .1em; }
+.team-participation-toggle { margin-left: auto; min-height: 30px; display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; border: 1px solid #d6e0e5; border-radius: 8px; color: #748691; background: white; font-size: 7px; font-weight: 800; text-transform: uppercase; }
+.team-participation-toggle.active { color: #087e59; border-color: #a9dec9; background: #e8f7f0; }
 .helper-text { color: #83919a; background: #f3f6f7; padding: 10px; border-radius: 8px; font-size: 9px; text-align: center; margin: 16px 0 0; }
 .admin-round { margin-bottom: 26px; }
 .admin-live-match { display: grid; gap: 7px; }
@@ -451,6 +463,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(0, 174, 234,
   .admin-card { padding: 17px 14px; border-radius: 15px; }
   .format-picker { grid-template-columns: 1fr; }
   .format-picker button { min-height: 82px; }
+  .league-legs-picker { grid-template-columns: 1fr; }
   .form-grid { grid-template-columns: 1fr; }
   .field--wide { grid-column: auto; }
   .admin-card--action { display: grid; }

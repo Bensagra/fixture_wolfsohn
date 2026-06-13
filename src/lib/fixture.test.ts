@@ -13,6 +13,7 @@ const settings: TournamentSettings = {
   title: "Test",
   subtitle: "Test",
   format: "league",
+  leagueLegs: 1,
   eventDate: "2026-06-13",
   startTime: "21:00",
   matchMinutes: 20,
@@ -44,6 +45,25 @@ describe("fixture de liga", () => {
     const standings = calculateStandings(participants, matches);
     expect(standings[0].points).toBe(3);
     expect(standings[0].goalDifference).toBe(2);
+  });
+
+  it("genera ida y vuelta invirtiendo local y visitante", () => {
+    const participants = teams(4);
+    const matches = generateLeague(participants, { ...settings, leagueLegs: 2 });
+    const firstLeg = matches.filter((match) => match.round <= 3);
+    const secondLeg = matches.filter((match) => match.round > 3);
+
+    expect(matches).toHaveLength(12);
+    expect(secondLeg).toHaveLength(firstLeg.length);
+    firstLeg.forEach((match) => {
+      expect(
+        secondLeg.some(
+          (returnMatch) =>
+            returnMatch.homeTeamId === match.awayTeamId &&
+            returnMatch.awayTeamId === match.homeTeamId,
+        ),
+      ).toBe(true);
+    });
   });
 });
 

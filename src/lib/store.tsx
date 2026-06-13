@@ -71,6 +71,14 @@ export function shouldAcceptRemoteUpdate(existing: TournamentState, updated: Tou
   return updatedTime > existingTime;
 }
 
+function normalizeTournamentState(item: TournamentState): TournamentState {
+  return {
+    ...item,
+    settings: { ...item.settings, leagueLegs: item.settings.leagueLegs ?? 1 },
+    teamCatalog: Array.isArray(item.teamCatalog) ? item.teamCatalog : item.teams,
+  };
+}
+
 function team(name: string, index: number): Team {
   return {
     id: crypto.randomUUID(),
@@ -85,6 +93,7 @@ const defaultSettings: TournamentSettings = {
   title: "Mundial Or Hanoar",
   subtitle: "El torneo de nuestra comunidad",
   format: "league",
+  leagueLegs: 1,
   eventDate: "2026-06-13",
   startTime: "21:00",
   matchMinutes: 20,
@@ -116,6 +125,7 @@ export function createTournamentState(
     id: withDemoTeams ? "mundial-or-hanoar" : slugify(title),
     associationCode: withDemoTeams ? "2026" : generateAssociationCode(),
     settings,
+    teamCatalog: [...teams],
     teams,
     matches:
       teams.length > 1
@@ -140,7 +150,10 @@ function readLocal(): { tournaments: TournamentState[]; activeId: string; associ
           ? currentCode
           : generateUniqueAssociationCode(migratedCodes);
       migratedCodes.add(associationCode);
-      return { ...item, associationCode };
+      return normalizeTournamentState({
+        ...item,
+        associationCode,
+      });
     });
     const requested = localStorage.getItem(ACTIVE_KEY);
     const codes = JSON.parse(localStorage.getItem(ASSOCIATED_CODES_KEY) || "[]") as string[];
@@ -159,6 +172,7 @@ function readLocal(): { tournaments: TournamentState[]; activeId: string; associ
 interface TournamentContextValue {
   state: TournamentState;
   tournaments: TournamentState[];
+  allTeams: Team[];
   visibleTournaments: TournamentState[];
   activeTournamentId: string;
   hasPublicAccess: boolean;
@@ -176,6 +190,7 @@ interface TournamentContextValue {
   selectMyTeam: (teamId: string | null) => void;
   addTeam: (name: string, shortName?: string, color?: string) => void;
   removeTeam: (teamId: string) => void;
+  setTeamParticipation: (teamId: string, participating: boolean) => void;
   updateSettings: (settings: Partial<TournamentSettings>) => void;
   generateFixture: () => void;
   updateResult: (matchId: string, homeScore: number, awayScore: number) => void;
@@ -210,6 +225,15 @@ export function TournamentProvider({ children }: PropsWithChildren) {
       ),
     [associatedCodes, tournaments],
   );
+  const allTeams = useMemo(() => {
+    const catalog = new Map<string, Team>();
+    tournaments.forEach((tournament) =>
+      [...tournament.teamCatalog, ...tournament.teams].forEach((item) => {
+        if (!catalog.has(item.id)) catalog.set(item.id, item);
+      }),
+    );
+    return [...catalog.values()].sort((a, b) => a.name.localeCompare(b.name, "es"));
+  }, [tournaments]);
   const activeState =
     tournaments.find((item) => item.id === activeTournamentId) ??
     visibleTournaments[0] ??
@@ -231,10 +255,11 @@ export function TournamentProvider({ children }: PropsWithChildren) {
             associatedCodes.map((code) => loadRemoteTournamentByCode(code).catch(() => null)),
           )
         ).filter((item): item is TournamentState => Boolean(item));
-    if (remote.length || !isAdmin) {
-      setTournaments(remote);
+    const normalizedRemote = remote.map(normalizeTournamentState);
+    if (normalizedRemote.length || !isAdmin) {
+      setTournaments(normalizedRemote);
       setActiveTournamentId((current) =>
-        remote.some((item) => item.id === current) ? current : remote[0]?.id ?? "",
+        normalizedRemote.some((item) => item.id === current) ? current : normalizedRemote[0]?.id ?? "",
       );
     }
     setSynced(true);
@@ -262,6 +287,7 @@ export function TournamentProvider({ children }: PropsWithChildren) {
       setSynced(false);
       const snapshot = tournaments.map((tournament) => ({
         ...tournament,
+        teamCatalog: [...tournament.teamCatalog],
         teams: [...tournament.teams],
         matches: tournament.matches.map((match) => ({ ...match })),
       }));
@@ -281,11 +307,12 @@ export function TournamentProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (!supabaseEnabled) return;
     return subscribeToTournamentChanges((updated) => {
+      const normalized = normalizeTournamentState(updated);
       setTournaments((current) => {
-        const existing = current.find((item) => item.id === updated.id);
+        const existing = current.find((item) => item.id === normalized.id);
         if (!existing) return current;
-        if (!shouldAcceptRemoteUpdate(existing, updated)) return current;
-        return current.map((item) => (item.id === updated.id ? updated : item));
+        if (!shouldAcceptRemoteUpdate(existing, normalized)) return current;
+        return current.map((item) => (item.id === normalized.id ? normalized : item));
       });
     });
   }, []);
@@ -311,6 +338,7 @@ export function TournamentProvider({ children }: PropsWithChildren) {
     setSynced(false);
     const snapshot = tournaments.map((tournament) => ({
       ...tournament,
+      teamCatalog: [...tournament.teamCatalog],
       teams: [...tournament.teams],
       matches: tournament.matches.map((match) => ({ ...match })),
     }));
@@ -343,9 +371,10 @@ export function TournamentProvider({ children }: PropsWithChildren) {
       const code = normalizeAssociationCode(input);
       if (!/^\d{4}$/.test(code)) return "invalid";
       if (associatedCodes.includes(code)) return "already-added";
-      const tournament = supabaseEnabled
+      const loadedTournament = supabaseEnabled
         ? await loadRemoteTournamentByCode(code).catch(() => null)
         : tournaments.find((item) => normalizeAssociationCode(item.associationCode) === code) ?? null;
+      const tournament = loadedTournament ? normalizeTournamentState(loadedTournament) : null;
       if (!tournament) return "invalid";
       if (!tournament.settings.published) return "unpublished";
       setTournaments((current) => [
@@ -381,9 +410,16 @@ export function TournamentProvider({ children }: PropsWithChildren) {
 
   const createTournament = useCallback((title: string, format: TournamentFormat) => {
     setTournaments((current) => {
+      const catalog = new Map<string, Team>();
+      current.forEach((item) =>
+        [...item.teamCatalog, ...item.teams].forEach((catalogTeam) =>
+          catalog.set(catalogTeam.id, catalogTeam),
+        ),
+      );
       const tournament = {
         ...createTournamentState(title.trim(), format),
         associationCode: generateUniqueAssociationCode(current.map((item) => item.associationCode)),
+        teamCatalog: [...catalog.values()],
       };
       setActiveTournamentId(tournament.id);
       return [...current, tournament];
@@ -435,19 +471,22 @@ export function TournamentProvider({ children }: PropsWithChildren) {
   );
 
   const addTeam = useCallback(
-    (name: string, shortName?: string, color?: string) =>
-      mutate((current) => ({
-        ...current,
-        teams: [
-          ...current.teams,
-          {
-            ...team(name.trim(), current.teams.length),
-            shortName: shortName?.trim().toUpperCase() || name.slice(0, 3).toUpperCase(),
-            color: color || colors[current.teams.length % colors.length],
-          },
-        ],
-      })),
-    [mutate],
+    (name: string, shortName?: string, color?: string) => {
+      const created = {
+        ...team(name.trim(), allTeams.length),
+        shortName: shortName?.trim().toUpperCase() || name.slice(0, 3).toUpperCase(),
+        color: color || colors[allTeams.length % colors.length],
+      };
+      setTournaments((current) =>
+        current.map((item) => ({
+          ...item,
+          teamCatalog: [...item.teamCatalog, created],
+          teams: item.id === activeTournamentId ? [...item.teams, created] : item.teams,
+          lastUpdated: nextTimestamp(item.lastUpdated),
+        })),
+      );
+    },
+    [activeTournamentId, allTeams.length],
   );
 
   const removeTeam = useCallback(
@@ -457,6 +496,23 @@ export function TournamentProvider({ children }: PropsWithChildren) {
         teams: current.teams.filter((item) => item.id !== teamId),
       })),
     [mutate],
+  );
+
+  const setTeamParticipation = useCallback(
+    (teamId: string, participating: boolean) =>
+      mutate((current) => {
+        if (!participating) {
+          return { ...current, teams: current.teams.filter((item) => item.id !== teamId) };
+        }
+        const selected = allTeams.find((item) => item.id === teamId);
+        if (!selected) return current;
+        const teamCatalog = current.teamCatalog.some((item) => item.id === teamId)
+          ? current.teamCatalog
+          : [...current.teamCatalog, selected];
+        if (current.teams.some((item) => item.id === teamId)) return { ...current, teamCatalog };
+        return { ...current, teamCatalog, teams: [...current.teams, selected] };
+      }),
+    [allTeams, mutate],
   );
 
   const updateSettings = useCallback(
@@ -631,6 +687,7 @@ export function TournamentProvider({ children }: PropsWithChildren) {
     () => ({
       state: activeState,
       tournaments,
+      allTeams,
       visibleTournaments,
       activeTournamentId,
       hasPublicAccess,
@@ -648,6 +705,7 @@ export function TournamentProvider({ children }: PropsWithChildren) {
       selectMyTeam,
       addTeam,
       removeTeam,
+      setTeamParticipation,
       updateSettings,
       generateFixture,
       updateResult,
@@ -659,9 +717,9 @@ export function TournamentProvider({ children }: PropsWithChildren) {
       resetDemo,
     }),
     [
-      activeState, tournaments, visibleTournaments, activeTournamentId, hasPublicAccess, selectedTeamId, synced,
+      activeState, tournaments, allTeams, visibleTournaments, activeTournamentId, hasPublicAccess, selectedTeamId, synced,
       refreshTournaments, syncNow, associateTournament, removeAssociation, selectTournament, createTournament,
-      deleteTournament, regenerateAssociationCode, selectMyTeam, addTeam, removeTeam, updateSettings, generateFixture,
+      deleteTournament, regenerateAssociationCode, selectMyTeam, addTeam, removeTeam, setTeamParticipation, updateSettings, generateFixture,
       updateResult, updateLiveScore, callPlayers, startMatch, finishMatch, clearResult, resetDemo,
     ],
   );

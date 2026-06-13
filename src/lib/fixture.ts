@@ -60,6 +60,23 @@ export function generateLeague(
     }
     rotation.splice(1, 0, rotation.pop()!);
   }
+
+  if ((settings.leagueLegs ?? 1) === 2) {
+    const firstLeg = [...matches];
+    firstLeg.forEach((match) => {
+      matches.push({
+        ...match,
+        id: id(),
+        round: match.round + rounds,
+        roundLabel: `Fecha ${match.round + rounds}`,
+        homeTeamId: match.awayTeamId,
+        awayTeamId: match.homeTeamId,
+        ...scheduledDate(settings, matchIndex),
+      });
+      matchIndex += 1;
+    });
+  }
+
   return matches;
 }
 
@@ -147,7 +164,7 @@ export function generateGroupsAndFinals(
   let matchIndex = 0;
 
   groups.forEach(({ name, teams: groupTeams }) => {
-    generateLeague(groupTeams, settings).forEach((match) => {
+    generateLeague(groupTeams, { ...settings, leagueLegs: 1 }).forEach((match) => {
       matches.push(
         withSchedule(
           {

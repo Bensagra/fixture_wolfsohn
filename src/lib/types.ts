@@ -35,6 +35,7 @@ export interface TournamentSettings {
   title: string;
   subtitle: string;
   format: TournamentFormat;
+  leagueLegs: 1 | 2;
   eventDate: string;
   startTime: string;
   matchMinutes: number;
@@ -47,6 +48,7 @@ export interface TournamentState {
   id: string;
   associationCode: string;
   settings: TournamentSettings;
+  teamCatalog: Team[];
   teams: Team[];
   matches: Match[];
   lastUpdated: string;

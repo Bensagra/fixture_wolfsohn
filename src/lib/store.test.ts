@@ -22,6 +22,8 @@ describe("múltiples torneos", () => {
     expect(league.associationCode).toHaveLength(4);
     expect(cup.associationCode).toHaveLength(4);
     expect(league.associationCode).not.toBe(cup.associationCode);
+    expect(league.teamCatalog).toEqual([]);
+    expect(cup.teamCatalog).toEqual([]);
     expect(league.teams).not.toBe(cup.teams);
     expect(league.matches).not.toBe(cup.matches);
   });
